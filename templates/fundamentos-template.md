@@ -6,12 +6,18 @@
 
 <!-- Copie o bloco abaixo a cada nova análise, datado, mais recente no topo -->
 
-## AAAA-MM-DD — veredito: [COMPRAR / REFORÇAR / MANTER / REDUZIR / VENDER]
+## AAAA-MM-DD — veredito: [COMPRAR / REFORÇAR / MANTER / REDUZIR / VENDER / SEM AÇÃO — FALTA DADO]
 
 > Regra: cada número leva **fonte + data**. Dado que não veio = **"indisponível"** (NUNCA estimar de memória).
+> Se os fundamentos não puderam ser verificados, veredito = **"sem ação — falta dado"** (não palpite).
+> **Hierarquia de fontes:** preferir primárias (RI da empresa, B3/CVM no BR, 10-Q/10-K na SEC no US) sobre agregadores.
+
+**TESE ANCORADA (preencher na 1ª análise e manter):**
+- *Tese original:* [por que entrou/entraria na carteira]
+- *O que invalidaria a tese:* [condições concretas que disparam saída — "a tese quebrou", não "o preço caiu"]
 
 **Preço/cotação (verificada):** [valor — fonte, data] · **Valuation:** [P/L fwd, P/S, DY — fonte, data]
-**Fontes usadas nesta entrada:** [ex.: stockanalysis.com (2026-06-14), RI da empresa (1T26)]
+**Fontes usadas nesta entrada:** [priorizar primárias; ex.: 10-Q SEC (1T26), RI da empresa, B3/CVM]
 
 **Métricas-chave (cada uma com fonte/data ou "indisponível"):**
 - (BR-dividendos) Dividend yield: __% | **Sustentável? (cruzar com payout/lucro — cuidado yield trap)** __ | Payout: __% | Lucro/Caixa (tend.): __ | Dív.líq/EBITDA: __ | ROE: __

@@ -46,21 +46,26 @@ Se faltar a posição (`resumo`) ou o extrato, **peça ao usuário** o export co
    - **Dispare ação quando os fundamentos mudarem materialmente vs. a análise anterior:**
      deterioração (corte/insustentabilidade de dividendo em BR; desaceleração de receita, queda de margem, perda de moat, queima de caixa em US; tese quebrada) → **reduzir/vender**;
      melhora consistente + valuation razoável → **comprar/reforçar** (dentro do mandato).
-   - Se for a 1ª análise do papel, registre como linha de base.
-   - **Cada número leva fonte + data**; dado que não veio = **"indisponível"** (nunca estimar).
-   - **BR-dividendos:** cheque yield trap (yield alto pode ser preço caindo — cruze com payout/lucro).
-   - **US-crescimento:** cheque **diluição** (shares outstanding ao longo do tempo), não só receita.
+   - Se for a 1ª análise do papel, registre como linha de base **com a tese ancorada** (tese original + o que a invalidaria).
+   - **Cadência:** só reavalie fundamentos com **dado novo** (resultado, guidance, fato relevante — em regra trimestral). **Gatilho de venda por fundamento NÃO dispara por preço**, só por mudança material na tese/fundamento.
+   - **Hierarquia de fontes:** priorizar **primárias** (RI, B3/CVM no BR, 10-Q/10-K na SEC no US) sobre agregadores.
+   - **Cada número leva fonte + data**; dado que não veio = **"indisponível"**. Se não deu pra verificar, veredito = **"sem ação — falta dado"** (nunca palpite).
+   - **BR-dividendos:** cheque yield trap (yield alto pode ser preço caindo — cruze com payout/lucro); use os limiares da doutrina (payout, dív.líq/EBITDA, ROE).
+   - **US-crescimento:** cheque **diluição** (shares outstanding + SBC), não só receita; use os limiares da doutrina.
    - **Ativos US:** reporte retorno em **USD e BRL** (use a seção "custo em USD vs BRL" do parser + preço do ativo e USD/BRL ao vivo) e o efeito câmbio.
 
 6. **Aplique doutrina + mandato.** Para cada posição classifique **manter / reforçar / reduzir / sair**, e para novas ideias **comprar**, considerando:
    - **Papel de cada mercado (doutrina):** BR = renda/dividendos (preferir sólidas boas pagadoras; evitar small cap BR especulativa); US = crescimento de capital (núcleo de grandes consolidadas + satélite de small/mid caps de tecnologia/IA/recursos/infraestrutura, sem perder o núcleo). Longo prazo, baixa rotatividade.
-   - **Concentração**: peso de um único papel acima do limite do mandato (rebalancear/realizar parcial).
-   - **Caixa parado**: muito % em fundo DI/RF caro — checar taxa de administração; comparar com Tesouro Selic / CDB / fundo DI barato.
+   - **Concentração por papel E por setor (look-through):** ação direta conta no setor dela; ETF distribui o peso pelos setores que carrega. Consolide direto + fatia setorial dos ETFs vs. o teto (~25–30%/setor).
+   - **Liquidez (veto):** posição ilíquida (ação não liquidável em ≤~5 pregões; ETF com AUM/volume baixo) **veta aumento** — sinalize antes de qualquer reforço.
+   - **Renda fixa:** separe **marcação a mercado vs. carregar até o vencimento**; cheque indexador, crédito/FGC, custo (taxa) e come-cotas.
+   - **Caixa parado**: muito % em fundo DI/RF caro (> ~0,5% a.a. para DI) — comparar com Tesouro Selic / CDB / fundo DI barato, líquido de taxas e IR.
    - **Previdência**: checar taxa do VGBL e regime tributário; avaliar portabilidade sem custo/IR.
-   - **Mudança de fundamentos (passo 5)**: traduza as deteriorações/melhoras em compra/venda.
-   - **Novas classes**: ETFs/commodities/contratos/cripto só como satélite confiável e dimensionado, dentro do teto do mandato.
+   - **Custo tributário antes de vender:** IR sobre ganho, isenção de R$ 20 mil/mês em ações BR, come-cotas, ativos no exterior. Venda fiscalmente burra pode ser pior que não agir.
+   - **Mudança de fundamentos (passo 5)**: traduza deteriorações/melhoras (e tese quebrada) em compra/venda.
+   - **Novas classes**: ETFs/commodities/contratos/cripto (≤3–5%) e VC/private (satélite ilíquido, ≤~5%, máximo rigor) só como satélite dimensionado, dentro do teto do mandato.
 
-7. **Gere o relatório** em `<pasta-do-cliente>/relatorio-AAAA-MM-DD.md` (use `templates/relatorio-template.md`). Atualize também o snapshot se útil.
+7. **Gere o relatório** em `<pasta-do-cliente>/relatorio-AAAA-MM-DD.md` (use `templates/relatorio-template.md`). Inclua, quando fizer sentido, **cenários por horizonte (1/5/10/20 anos)** — faixas pessimista/base/otimista com premissas explícitas, **nunca preço-alvo pontual** (é o item de maior incerteza). Atualize também o snapshot se útil.
 
 8. **Gere SEMPRE o PDF do relatório** (entregável padrão) a partir do .md:
    ```
@@ -79,10 +84,12 @@ Se faltar a posição (`resumo`) ou o extrato, **peça ao usuário** o export co
 
 ## Princípios
 - Apoio à decisão, **nunca** execução de ordens ou movimentação de dinheiro.
+- **Longo prazo, baixa rotatividade.** Monitorar diariamente ≠ operar diariamente. Não recomendar giro por flutuação de preço; só por mudança de fundamento/tese.
 - **Anti-invenção (categórico):** só usar fundamentos/números **vindos de uma fonte de dados**
-  (Kinvo ou web verificada). **NUNCA estimar de memória.** Para CADA número fundamental, registrar
-  **a data e a fonte**. Se um dado não veio, reportar **"indisponível"** — jamais chutar, arredondar
-  de cabeça ou preencher por plausibilidade. Uma recomendação não pode se apoiar em número sem fonte.
+  (Kinvo ou web verificada), priorizando **fontes primárias** (RI, B3/CVM, SEC). **NUNCA estimar de memória.**
+  Para CADA número, registrar **data e fonte**. Dado ausente = **"indisponível"**. Se não deu pra verificar,
+  veredito = **"sem ação — falta dado"** (abstenção, nunca palpite). Recomendação não se apoia em número sem fonte.
+- **Liquidez é veto** ao aumento de posição (ações ilíquidas; ETFs com AUM/volume baixo), não nota de rodapé.
 - **Verifique números extraordinários** com cotação/fonte ao vivo antes de afirmar (lição Micron).
 - **Câmbio:** ativos em USD → reportar retorno em USD **e** em BRL, e o efeito câmbio (BRL − USD).
 - **Yield trap (BR)** e **diluição (US small caps)**: ver a doutrina; não recomendar por yield alto
