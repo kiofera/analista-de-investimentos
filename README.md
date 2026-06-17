@@ -40,7 +40,7 @@ de pacotes da distro + `pip install markdown`.)
 ## Instalar a skill no Claude Code
 Clone este repositório para dentro da pasta de skills do seu Claude Code:
 ```bash
-git clone https://github.com/<usuario>/<repo>.git ~/.claude/skills/analisar-carteira
+git clone https://github.com/kiofera/analista-de-investimentos.git ~/.claude/skills/analisar-carteira
 ```
 Reinicie o Claude Code. A skill fica disponível como `/analisar-carteira`.
 
