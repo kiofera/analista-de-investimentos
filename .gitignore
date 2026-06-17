@@ -1,0 +1,10 @@
+# Temporários / cache
+__pycache__/
+*.pyc
+*.html
+.DS_Store
+Thumbs.db
+
+# Dados gerados / de cliente (nunca devem entrar no repo da skill).
+# As carteiras e relatórios ficam nas pastas de cada cliente, FORA deste repositório.
+_fundamentos/
