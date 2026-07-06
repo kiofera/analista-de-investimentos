@@ -60,8 +60,17 @@ cd ~/.claude/skills/analisar-carteira && git pull
 ```
 
 ## Contribuir
-Sugestões e melhorias são bem-vindas — abra uma issue ou um pull request. A doutrina de investimento
+Sugestões e melhorias são bem-vindas — abra uma issue (há templates para **novo layout de corretora**,
+**bug** e **melhoria de doutrina**) ou um pull request. A doutrina de investimento
 (`estrategia-investimento.md`) é o coração das recomendações; ajuste-a conforme a sua visão.
+
+## Desenvolvimento
+Testes (carteira sintética, sem dados reais; só stdlib):
+```bash
+python tests/test_parser.py
+```
+O CI (GitHub Actions) roda esses testes a cada push/PR na `main` — se quebrar o parser, o commit acusa.
+Ao adicionar um layout novo em `detectar_tipo()`, inclua um caso sintético no teste.
 
 ## Privacidade
 Este repositório **não contém dados de clientes**. As carteiras, o histórico de fundamentos

@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências (markdown p/ PDF; wkhtmltopdf p/ teste opcional)
+        run: |
+          python -m pip install --quiet markdown
+          sudo apt-get update -qq && sudo apt-get install -y -qq wkhtmltopdf || echo "wkhtmltopdf indisponível — teste de PDF será pulado"
+
+      - name: Testes do parser (carteira sintética — sem dados reais)
+        run: python tests/test_parser.py
