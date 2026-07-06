@@ -150,8 +150,13 @@ quando o fundamento mudar materialmente (limiares por mercado acima).
   nunca um palpite.
 - **Verificar números extraordinários** com cotação/fonte ao vivo antes de afirmar (lição Micron).
 - **Custo tributário antes de vender:** pesar IR sobre ganho de capital, a **isenção mensal de R$ 20 mil**
-  em vendas de ações no mercado à vista (BR), come-cotas e tributação de ativos no exterior. Girar à toa
-  custa imposto e corrói o retorno composto de longo prazo — uma venda fiscalmente burra pode ser pior que não agir.
+  em vendas de ações no mercado à vista (**só BR/B3**), e o come-cotas em fundos. **Exterior (Lei
+  14.754/2023, desde 01/01/2024): aplicações financeiras no exterior de PF pagam 15% (alíquota única),
+  apurados ANUALMENTE na Declaração de Ajuste — NÃO existe mais isenção mensal de R$ 35 mil nem vantagem
+  em fracionar vendas entre meses; perdas de aplicações financeiras no exterior são COMPENSÁVEIS com
+  ganhos no ajuste** (planejar realização de perdas no mesmo ano-calendário dos ganhos). Regra tributária
+  muda — confirmar a vigente antes de recomendar e validar execução com contador. Girar à toa custa
+  imposto e corrói o retorno composto — uma venda fiscalmente burra pode ser pior que não agir.
 
 > Tudo é **apoio à decisão**, não execução nem recomendação regulada (CVM). O gestor decide e executa.
 > Gestão profissional de recursos de terceiros é regulada — manter como apoio informal à decisão.
