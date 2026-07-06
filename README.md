@@ -1,14 +1,18 @@
 # analisar-carteira — assistente de carteira (skill do Claude Code)
 
-Skill do [Claude Code](https://claude.com/claude-code) que lê a carteira de um cliente a partir dos
-**exports do Kinvo** (Excel de posição + extrato), cruza com o mercado e gera um **plano de ação**
+Skill do [Claude Code](https://claude.com/claude-code) que lê os **relatórios de carteira na pasta do
+cliente** — Kinvo com leitura automática; planilhas de outras fontes (B3, corretoras, planilha própria)
+via modo descoberta; PDFs —, cruza com o mercado e gera um **plano de ação**
 (manter / reforçar / reduzir / vender / comprar) + relatório em PDF.
 
 > ⚠️ **Apoio à decisão, não recomendação.** Esta ferramenta não executa ordens nem move dinheiro, e
 > não substitui assessoria de investimento registrada (CVM). Quem decide e executa é o usuário.
 
 ## O que ela faz
-- Lê a **posição oficial** e o **extrato** do Kinvo, reconcilia os totais e sinaliza riscos.
+- **Inventaria todos os arquivos de dados** da pasta do cliente (.xlsx/.csv/.pdf) e detecta layouts
+  conhecidos pela assinatura das colunas (Kinvo: posição + extrato), reconciliando totais e
+  sinalizando riscos. Planilhas de outras fontes entram em **modo descoberta** (o analista
+  interpreta as colunas antes de usar — nada é adivinhado).
 - Mostra alocação por classe, concentração, histórico de decisões (realizado) e proventos.
 - Faz **análise de fundamentos** via web e mantém um **histórico datado por papel** — na análise
   seguinte, compara e sugere compra/venda quando o fundamento muda.
@@ -45,7 +49,8 @@ git clone https://github.com/kiofera/analista-de-investimentos.git ~/.claude/ski
 Reinicie o Claude Code. A skill fica disponível como `/analisar-carteira`.
 
 ## Como usar
-1. Crie uma pasta por cliente e coloque nela os dois exports do Kinvo (posição e extrato, em Excel).
+1. Crie uma pasta por cliente e coloque nela os relatórios da carteira (Kinvo em Excel tem leitura
+   automática; planilhas de outras fontes e PDFs também são processados).
 2. Rode `/analisar-carteira` apontando para a pasta do cliente.
 3. A skill gera o relatório (`.md` + `.pdf`) na pasta e a linha de base de fundamentos em `_fundamentos/`.
 

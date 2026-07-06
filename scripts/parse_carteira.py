@@ -1,31 +1,35 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Lê os exports do Kinvo (Excel) de uma pasta de cliente e imprime um resumo
-estruturado e confiável da carteira. Usa apenas a biblioteca padrão (zipfile +
-xml.etree) — um .xlsx é um zip de XML, não precisa de openpyxl/pandas.
+Lê os relatórios de carteira de uma pasta de cliente — QUALQUER arquivo de dados, não só Kinvo —
+e imprime um resumo estruturado. Usa apenas a biblioteca padrão.
 
 Uso:
-    python parse_kinvo.py "<pasta-do-cliente>"
+    python parse_carteira.py "<pasta-do-cliente>"
 
-Detecta automaticamente:
-  - posição/resumo:  arquivo contendo "resumo" no nome  (FONTE AUTORITATIVA p/ valor atual)
-  - extrato:         arquivo contendo "extrato" no nome  (histórico de movimentações)
+Como funciona (ingestão em 3 camadas):
+  1. INVENTÁRIO — lista todos os arquivos de dados da pasta (.xlsx/.xls/.csv/.pdf).
+  2. DETECÇÃO POR ASSINATURA — reconhece layouts conhecidos pelas COLUNAS (não pelo nome do arquivo):
+       - posição Kinvo  (produto + classe + saldo)      -> análise completa de posição + setores
+       - extrato Kinvo  (produto + descrição + total)   -> histórico, proventos, encerrados, câmbio
+  3. MODO DESCOBERTA — planilha de layout desconhecido (B3, corretora, planilha própria...):
+     imprime abas, cabeçalhos e amostra de linhas para o ANALISTA interpretar. Nunca adivinha
+     o que cada coluna significa (regra anti-invenção). Layout recorrente? Adicionar uma
+     assinatura em detectar_tipo() para virar leitura automática.
+  PDFs são inventariados com a instrução de extração (pdftotext; se for imagem, pdftoppm/Poppler).
 
 Lições embutidas (ver SKILL.md):
   - "Valor Total" da Avenue JÁ está em BRL; a coluna Câmbio é só referência. NÃO multiplicar.
   - A coluna "Rentabilidade (%)" do Kinvo é BUGADA em vários papéis -> calcular saldo/aplicado-1.
-  - Sanidade: posições com valorização absurda (>+300%) ou peso alto são SINALIZADAS para
-    verificação de cotação ao vivo antes de reportar (caso Micron: dado correto, mas só dá pra
-    saber checando a cotação real).
+  - Posições com valorização absurda (>+300%) são SINALIZADAS p/ verificação com cotação ao vivo.
+  - Duas posições de fontes diferentes na mesma pasta -> risco de DUPLA CONTAGEM (avisado).
 
 Concentração por setor (doutrina v2, look-through de ETFs):
   - Mapa ticker->setor em  data/setores.csv   (editável; sem linha = INDEFINIDO, nunca chutar).
-  - Composição de ETFs em  data/etf_setores.csv (pesos SEMPRE com fonte+data; ETF sem linhas =
+  - Composição de ETFs em  data/etf_setores.csv (pesos SEMPRE com fonte+data; sem linhas =
     look-through PENDENTE, reportado explicitamente).
-  - Ação direta conta no setor dela; ETF distribui o saldo pelos setores que carrega.
 """
-import sys, os, glob, zipfile, collections
+import sys, os, glob, re, zipfile, collections
 import xml.etree.ElementTree as ET
 
 try:                                  # saída consistente em UTF-8
@@ -51,17 +55,10 @@ def num(s):
         return 0.0
 
 
-def read_xlsx(path):
-    """Retorna lista de linhas (cada uma lista de strings) da 1ª planilha."""
-    z = zipfile.ZipFile(path)
-    ss = []
-    if "xl/sharedStrings.xml" in z.namelist():
-        root = ET.fromstring(z.read("xl/sharedStrings.xml"))
-        for si in root.findall(NS + "si"):
-            ss.append("".join(t.text or "" for t in si.iter(NS + "t")))
-    sheet_name = sorted(n for n in z.namelist()
-                        if n.startswith("xl/worksheets/") and n.endswith(".xml"))[0]
-    sh = ET.fromstring(z.read(sheet_name))
+# ------------------------------------------------------------- leitura ------
+
+def _sheet_rows(z, sheet_file, ss):
+    sh = ET.fromstring(z.read(sheet_file))
 
     def colnum(ref):
         letters = "".join(c for c in ref if c.isalpha())
@@ -71,7 +68,10 @@ def read_xlsx(path):
         return n
 
     rows = []
-    for row in sh.find(NS + "sheetData").findall(NS + "row"):
+    sd = sh.find(NS + "sheetData")
+    if sd is None:
+        return rows
+    for row in sd.findall(NS + "row"):
         cells, maxc = {}, 0
         for c in row.findall(NS + "c"):
             v = c.find(NS + "v")
@@ -83,6 +83,55 @@ def read_xlsx(path):
             cells[ci] = val
         rows.append([cells.get(i, "") for i in range(1, maxc + 1)])
     return rows
+
+
+def read_xlsx(path):
+    """Retorna dict {nome_da_aba: linhas} com TODAS as abas do arquivo."""
+    z = zipfile.ZipFile(path)
+    ss = []
+    if "xl/sharedStrings.xml" in z.namelist():
+        root = ET.fromstring(z.read("xl/sharedStrings.xml"))
+        for si in root.findall(NS + "si"):
+            ss.append("".join(t.text or "" for t in si.iter(NS + "t")))
+
+    def keynum(n):                     # sheet.xml, sheet1.xml, sheet10.xml -> ordena certo
+        m = re.search(r"(\d+)", os.path.basename(n))
+        return int(m.group(1)) if m else 0
+
+    sheet_files = sorted((n for n in z.namelist()
+                          if n.startswith("xl/worksheets/") and n.endswith(".xml")), key=keynum)
+    names = []
+    try:                               # nomes reais das abas (ordem do workbook)
+        wb = ET.fromstring(z.read("xl/workbook.xml"))
+        names = [s.get("name") for s in wb.iter(NS + "sheet")]
+    except Exception:
+        pass
+    out = {}
+    for i, sf in enumerate(sheet_files):
+        nome = names[i] if i < len(names) else f"aba{i + 1}"
+        out[nome] = _sheet_rows(z, sf, ss)
+    return out
+
+
+def read_csv_file(path):
+    """Lê CSV com detecção de encoding (utf-8/latin-1) e separador (;, , ou tab)."""
+    import csv as _csv
+    raw = None
+    for enc in ("utf-8-sig", "latin-1"):
+        try:
+            with open(path, encoding=enc) as f:
+                raw = f.read()
+            break
+        except UnicodeDecodeError:
+            continue
+    if raw is None:
+        return {}
+    head = raw[:2048]
+    sep = ";" if head.count(";") > head.count(",") else ","
+    if head.count("\t") > max(head.count(";"), head.count(",")):
+        sep = "\t"
+    rows = list(_csv.reader(raw.splitlines(), delimiter=sep))
+    return {"csv": rows}
 
 
 def colmap(header):
@@ -105,6 +154,19 @@ def first_col(cmap, options):
         i = find_col(cmap, o)
         if i is not None:
             return i
+    return None
+
+
+def detectar_tipo(rows):
+    """Identifica o layout pela ASSINATURA das colunas do cabeçalho (linha 1)."""
+    if not rows or not rows[0]:
+        return None
+    cm = colmap(rows[0])
+    tem = lambda *n: find_col(cm, *n) is not None
+    if tem("produto") and tem("classe") and tem("saldo"):
+        return "posicao-kinvo"
+    if tem("produto") and tem("descri") and (tem("valor total") or tem("quantidade")):
+        return "extrato-kinvo"
     return None
 
 
@@ -196,20 +258,20 @@ def analisar_setores(holds, total):
         print(f"    >>> SETOR INDEFINIDO: {prod[:40]} (R$ {sal:,.0f}) — mapear em data/setores.csv.")
 
 
-def analisar_posicao(path):
-    rows = read_xlsx(path)
+# ---------------------------------------------------------------- análises ---
+
+def analisar_posicao(rows, label):
     cm = colmap(rows[0])
     ci_prod = find_col(cm, "produto")
     ci_classe = find_col(cm, "classe")
     ci_apl = find_col(cm, "aplicado")
     ci_sal = find_col(cm, "saldo")
-    ci_part = find_col(cm, "participa")
     data = rows[1:]
     hold = [r for r in data if ci_sal is not None and num(r[ci_sal]) > 0]
     total = sum(num(r[ci_sal]) for r in hold)
 
     print("=" * 70)
-    print("POSIÇÃO ATUAL (fonte autoritativa):", os.path.basename(path))
+    print("POSIÇÃO ATUAL (fonte autoritativa):", label)
     print("=" * 70)
     print(f"Posições com saldo > 0: {len(hold)}")
     print(f"SALDO BRUTO TOTAL:      R$ {total:,.2f}")
@@ -251,9 +313,8 @@ def analisar_posicao(path):
     return total, current
 
 
-def analisar_extrato(path, current=None):
+def analisar_extrato(rows, label, current=None):
     current = current or set()
-    rows = read_xlsx(path)
     cm = colmap(rows[0])
     ci_data = find_col(cm, "data")
     ci_prod = find_col(cm, "produto")
@@ -265,7 +326,7 @@ def analisar_extrato(path, current=None):
     data = rows[1:]
 
     print("\n" + "=" * 70)
-    print("EXTRATO / HISTÓRICO:", os.path.basename(path))
+    print("EXTRATO / HISTÓRICO:", label)
     print("=" * 70)
     datas = [r[ci_data] for r in data if r[ci_data]]
     print(f"Transações: {len(data)} | Período: {datas[-1]} a {datas[0]}")
@@ -342,28 +403,101 @@ def analisar_extrato(path, current=None):
                 print(f"    {p[:40]:40s} {f['qtd']:10.4f} {f['usd']:12,.2f} {f['brl']:12,.2f} {fxm:9.3f}")
 
 
+def modo_descoberta(rows, label):
+    """Layout desconhecido: expõe estrutura e amostra para o analista interpretar (não adivinha)."""
+    print("\n" + "=" * 70)
+    print("LAYOUT DESCONHECIDO (modo descoberta):", label)
+    print("=" * 70)
+    n_dados = max(0, len(rows) - 1)
+    print(f"Linhas: {len(rows)} (1 cabeçalho? + {n_dados})")
+    amostra = rows[:7]
+    for i, r in enumerate(amostra):
+        cells = " | ".join((c or "")[:18] for c in r[:10])
+        rotulo = "CABEÇALHO?" if i == 0 else f"linha {i}"
+        print(f"  [{rotulo:10s}] {cells}")
+    if len(rows) > 7:
+        print(f"  ... (+{len(rows) - 7} linhas)")
+    print("  >>> ANALISTA: interprete as colunas acima antes de usar os números (anti-invenção).")
+    print("      Se este layout for recorrente, adicione uma assinatura em detectar_tipo().")
+
+
 def main():
     if len(sys.argv) < 2:
-        print("Uso: python parse_kinvo.py \"<pasta-do-cliente>\"")
+        print("Uso: python parse_carteira.py \"<pasta-do-cliente>\"")
         sys.exit(1)
     folder = sys.argv[1]
-    xlsx = glob.glob(os.path.join(folder, "*.xlsx"))
-    pos = next((f for f in xlsx if "resumo" in os.path.basename(f).lower()
-                or "posi" in os.path.basename(f).lower()), None)
-    ext = next((f for f in xlsx if "extrato" in os.path.basename(f).lower()), None)
+
+    arquivos = sorted(
+        f for f in glob.glob(os.path.join(folder, "*"))
+        if os.path.splitext(f)[1].lower() in (".xlsx", ".xls", ".csv", ".pdf")
+    )
+    print("=" * 70)
+    print("INVENTÁRIO DE ARQUIVOS DE DADOS:", folder)
+    print("=" * 70)
+    if not arquivos:
+        print("  (nenhum arquivo .xlsx/.xls/.csv/.pdf na pasta — peça os exports ao usuário)")
+        return
+    for f in arquivos:
+        print(f"  {os.path.getsize(f):>10,} bytes  {os.path.basename(f)}")
+    print()
+
+    posicoes, extratos, desconhecidos, pdfs = [], [], [], []
+    for f in arquivos:
+        ext = os.path.splitext(f)[1].lower()
+        base = os.path.basename(f)
+        if ext == ".pdf":
+            pdfs.append(f)
+            continue
+        if ext == ".xls":
+            desconhecidos.append((None, f"{base} (formato .xls antigo — converter para .xlsx/.csv)"))
+            continue
+        try:
+            abas = read_xlsx(f) if ext == ".xlsx" else read_csv_file(f)
+        except Exception as e:
+            desconhecidos.append((None, f"{base} (erro ao ler: {e})"))
+            continue
+        multi = len(abas) > 1
+        for nome, rows in abas.items():
+            if not rows:
+                continue
+            label = f"{base}" + (f" [aba: {nome}]" if multi else "")
+            tipo = detectar_tipo(rows)
+            if tipo == "posicao-kinvo":
+                posicoes.append((rows, label))
+            elif tipo == "extrato-kinvo":
+                extratos.append((rows, label))
+            else:
+                desconhecidos.append((rows, label))
 
     current = set()
-    if pos:
-        _total, current = analisar_posicao(pos)
-    else:
-        print("AVISO: não achei o export de POSIÇÃO (nome com 'resumo'/'posicao'). "
-              "Peça ao usuário o export de posição do Kinvo.")
-    if ext:
-        analisar_extrato(ext, current)
-    else:
-        print("\nAVISO: não achei o EXTRATO (nome com 'extrato').")
-    if pos:
-        print("\nLEMBRETE: confira se o SALDO BRUTO TOTAL bate com o relatório/topo do Kinvo; "
+    for rows, label in posicoes:
+        _total, cur = analisar_posicao(rows, label)
+        current |= cur
+    if len(posicoes) > 1:
+        print("\n>>> ATENÇÃO: MAIS DE UMA POSIÇÃO na pasta — risco de DUPLA CONTAGEM se as fontes "
+              "se sobrepõem (mesmo ativo em dois relatórios). Reconciliar antes de somar totais.")
+    for rows, label in extratos:
+        analisar_extrato(rows, label, current)
+    for rows, label in desconhecidos:
+        if rows is None:
+            print(f"\nAVISO: {label}")
+        else:
+            modo_descoberta(rows, label)
+    if pdfs:
+        print("\n" + "=" * 70)
+        print("PDFs ENCONTRADOS (extrair antes de usar):")
+        print("=" * 70)
+        for p in pdfs:
+            print(f"  {os.path.basename(p)}")
+        print("  >>> 1º tente texto:  pdftotext -layout \"<arquivo>\" saida.txt")
+        print("  >>> se vier vazio (PDF-imagem, ex.: Kinvo): renderizar com Poppler "
+              "(pdftoppm -png -r 200) e ler as imagens.")
+
+    if not posicoes:
+        print("\nAVISO: nenhuma POSIÇÃO reconhecida automaticamente. Se houver planilha em modo "
+              "descoberta acima, interprete-a; senão, peça o export de posição ao usuário.")
+    if posicoes:
+        print("\nLEMBRETE: confira se o SALDO BRUTO TOTAL bate com o relatório/topo da fonte; "
               "VERIFIQUE com cotação ao vivo qualquer posição marcada VERIFICAR-COTACAO; e "
               "resolva pendências de setor (INDEFINIDO / look-through PENDENTE) antes de "
               "concluir a leitura de concentração setorial.")

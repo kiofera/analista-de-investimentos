@@ -1,6 +1,6 @@
 ---
 name: analisar-carteira
-description: Analisa a carteira de investimentos de um cliente a partir dos exports do Kinvo (Excel de posição + extrato) e produz um plano de ação alinhado ao mandato. Use quando o usuário pedir para analisar/revisar a carteira de um cliente, checar oportunidades, verificar perda de fundamentos de um ativo, ou gerar o relatório periódico da carteira. É apoio à decisão — nunca executa ordens nem move dinheiro.
+description: Analisa a carteira de investimentos de um cliente a partir dos relatórios na pasta do cliente (Kinvo com leitura automática; planilhas de outras fontes via modo descoberta; PDFs) e produz um plano de ação alinhado ao mandato. Use quando o usuário pedir para analisar/revisar a carteira de um cliente, checar oportunidades, verificar perda de fundamentos de um ativo, ou gerar o relatório periódico da carteira. É apoio à decisão — nunca executa ordens nem move dinheiro.
 ---
 
 # Analisar carteira
@@ -13,13 +13,22 @@ Assistente financeiro de **apoio à decisão** para carteiras conservadoras/equi
 - Geração do relatório periódico de um cliente.
 
 ## Estrutura de dados
-Uma pasta por cliente dentro de `Mercado Financeiro/` (ex.: `Maria Clara Malutta/`). Dentro dela:
-- `kinvo__resumo-produtos*.xlsx` — **posição oficial** (fonte autoritativa de valor atual). Colunas: Produto, Classe, Instituição, Data 1ª aplicação, Valor aplicado, Saldo bruto, Rentabilidade(%), Participação(%).
-- `kinvo--extrato*.xlsx` — **histórico** de movimentações (Aplicação/Resgate/Dividendos/JCP/Rendimentos…).
-- `mandato-*.md` — regras do cliente (ver `templates/mandato-template.md`). Se não existir, crie a partir do template e confirme as regras com o usuário.
-- (opcional) `kinvo - relatorio consolidado*.pdf` — relatório visual; é **imagem** (jsPDF), sem texto. Só use se faltar o Excel.
+Uma pasta por cliente dentro de `Mercado Financeiro/` (ex.: `Maria Clara Malutta/`). O parser lê
+**qualquer arquivo de dados** da pasta (.xlsx/.csv/.pdf), de qualquer fonte:
+- **Kinvo (leitura automática, por assinatura de colunas):** posição (`Produto/Classe/Saldo…` — fonte
+  autoritativa de valor atual) e extrato (`Data/Produto/Descrição/Valor Total…` — histórico de
+  movimentações). O nome do arquivo não importa; a detecção é pelo cabeçalho.
+- **Outras fontes (B3, corretoras, planilha própria…):** entram em **modo descoberta** — o parser
+  expõe abas, cabeçalhos e amostra de linhas, e o analista interpreta as colunas ANTES de usar os
+  números (anti-invenção; nunca adivinhar o que uma coluna significa). Layout recorrente →
+  adicionar assinatura em `detectar_tipo()` no script para virar leitura automática.
+- **PDFs:** inventariados com instrução de extração (pdftotext; PDF-imagem como o do Kinvo →
+  renderizar com Poppler e ler visualmente).
+- `mandato-*.md` — regras do cliente (ver `templates/mandato-template.md`). Se não existir, crie a
+  partir do template e confirme as regras com o usuário.
 
-Se faltar a posição (`resumo`) ou o extrato, **peça ao usuário** o export correspondente do Kinvo (Carteira → exportar Excel). Não invente números.
+Duas posições de fontes diferentes na mesma pasta → o parser avisa sobre **dupla contagem**;
+reconcilie antes de somar. Se não houver posição em nenhum formato, **peça ao usuário**. Não invente números.
 
 ## Procedimento
 
@@ -30,15 +39,17 @@ Se faltar a posição (`resumo`) ou o extrato, **peça ao usuário** o export co
    **`fontes-de-pesquisa.md`** (hierarquia primária→secundária por tipo de dado + quais sites
    bloqueiam fetch e as alternativas).
 
-2. **Rode o parser** (lê posição + extrato, reconcilia, sinaliza riscos):
+2. **Rode o parser** (inventaria TODOS os arquivos de dados da pasta, detecta layouts por assinatura,
+   reconcilia e sinaliza riscos; desconhecidos saem em modo descoberta):
    ```
-   python ".claude/skills/analisar-carteira/scripts/parse_kinvo.py" "<pasta-do-cliente>"
+   python ".claude/skills/analisar-carteira/scripts/parse_carteira.py" "<pasta-do-cliente>"
    ```
    Use o `python` (ou `py` / `python3`) do PATH; se não estiver no PATH, localize o executável do
    Python 3 da máquina. O script usa só a biblioteca padrão (sem dependências). Veja o `README.md`
-   para instalar as dependências.
+   para instalar as dependências. **Trate as saídas de modo descoberta:** interprete as colunas e
+   incorpore os dados à análise manualmente (com a mesma disciplina de fonte+data).
 
-3. **Confira a reconciliação.** O "SALDO BRUTO TOTAL" da posição deve bater com o topo do relatório Kinvo e a soma por classe com a alocação. Se não bater, investigue antes de seguir.
+3. **Confira a reconciliação.** O "SALDO BRUTO TOTAL" da posição deve bater com o topo do relatório da fonte e a soma por classe com a alocação. Se houver mais de uma posição (fontes diferentes), resolva a dupla contagem. Se não bater, investigue antes de seguir.
 
 4. **VERIFIQUE cotações sinalizadas (regra de ouro — lição da Micron).** Para todo papel marcado `VERIFICAR-COTACAO` (valorização ≥ +300% ou número que pareça absurdo), **confirme com cotação ao vivo** (`WebSearch`/`WebFetch`) antes de reportar: quantidade (do extrato) × preço atual × câmbio ≈ saldo do Kinvo? Um número absurdo pode ser **real** (ex.: Micron a US$ 981 = +879%, dado correto) ou **erro** — só dá pra saber checando. Nunca afirme nem retrate um valor sem verificar a cotação real.
 
