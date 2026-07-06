@@ -78,6 +78,8 @@ def main():
         html_path = t.name
     try:
         r = subprocess.run([wk, "--encoding", "utf-8", "--enable-local-file-access",
+                            "--footer-font-size", "7", "--footer-spacing", "4",
+                            "--footer-right", "pág. [page]/[topage]",
                             "--quiet", html_path, pdf_path],
                            capture_output=True, text=True)
         if r.returncode != 0 and not os.path.exists(pdf_path):

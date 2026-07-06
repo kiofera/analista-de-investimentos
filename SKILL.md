@@ -26,7 +26,9 @@ Se faltar a posição (`resumo`) ou o extrato, **peça ao usuário** o export co
 1. **Carregue a régua de decisão.** Leia SEMPRE a doutrina do gestor em
    `.claude/skills/analisar-carteira/estrategia-investimento.md` **e** o `mandato-*.md` do cliente
    (se não houver mandato, crie a partir do template e confirme). A doutrina vale para todos; o
-   mandato do cliente pode restringir, nunca ampliar o risco.
+   mandato do cliente pode restringir, nunca ampliar o risco. Antes de pesquisar números, consulte
+   **`fontes-de-pesquisa.md`** (hierarquia primária→secundária por tipo de dado + quais sites
+   bloqueiam fetch e as alternativas).
 
 2. **Rode o parser** (lê posição + extrato, reconcilia, sinaliza riscos):
    ```
@@ -48,7 +50,7 @@ Se faltar a posição (`resumo`) ou o extrato, **peça ao usuário** o export co
      melhora consistente + valuation razoável → **comprar/reforçar** (dentro do mandato).
    - Se for a 1ª análise do papel, registre como linha de base **com a tese ancorada** (tese original + o que a invalidaria).
    - **Cadência:** só reavalie fundamentos com **dado novo** (resultado, guidance, fato relevante — em regra trimestral). **Gatilho de venda por fundamento NÃO dispara por preço**, só por mudança material na tese/fundamento.
-   - **Hierarquia de fontes:** priorizar **primárias** (RI, B3/CVM no BR, 10-Q/10-K na SEC no US) sobre agregadores.
+   - **Hierarquia de fontes:** priorizar **primárias** (RI, B3/CVM no BR, 10-Q/10-K na SEC no US) sobre agregadores. Guia prático por tipo de dado (incl. quais sites bloqueiam fetch): `fontes-de-pesquisa.md`. Número crítico → **≥2 fontes** ou 1 primária; conflito → reportar ambos.
    - **Cada número leva fonte + data**; dado que não veio = **"indisponível"**. Se não deu pra verificar, veredito = **"sem ação — falta dado"** (nunca palpite).
    - **BR-dividendos:** cheque yield trap (yield alto pode ser preço caindo — cruze com payout/lucro); use os limiares da doutrina (payout, dív.líq/EBITDA, ROE).
    - **US-crescimento:** cheque **diluição** (shares outstanding + SBC), não só receita; use os limiares da doutrina.
@@ -56,7 +58,7 @@ Se faltar a posição (`resumo`) ou o extrato, **peça ao usuário** o export co
 
 6. **Aplique doutrina + mandato.** Para cada posição classifique **manter / reforçar / reduzir / sair**, e para novas ideias **comprar**, considerando:
    - **Papel de cada mercado (doutrina):** BR = renda/dividendos (preferir sólidas boas pagadoras; evitar small cap BR especulativa); US = crescimento de capital (núcleo de grandes consolidadas + satélite de small/mid caps de tecnologia/IA/recursos/infraestrutura, sem perder o núcleo). Longo prazo, baixa rotatividade.
-   - **Concentração por papel E por setor (look-through):** ação direta conta no setor dela; ETF distribui o peso pelos setores que carrega. Consolide direto + fatia setorial dos ETFs vs. o teto (~25–30%/setor).
+   - **Concentração por papel E por setor (look-through):** o parser já imprime a tabela "Concentração por setor" (mapa em `data/setores.csv`; composição de ETFs em `data/etf_setores.csv`, pesos sempre com fonte+data). Resolva pendências que ele apontar: `SETOR INDEFINIDO` → mapear o ticker; `LOOK-THROUGH PENDENTE` → buscar a composição setorial do ETF (ver fontes-de-pesquisa.md) e preencher o CSV. Compare com o teto (~25–30%/setor).
    - **Liquidez (veto):** posição ilíquida (ação não liquidável em ≤~5 pregões; ETF com AUM/volume baixo) **veta aumento** — sinalize antes de qualquer reforço.
    - **Renda fixa:** separe **marcação a mercado vs. carregar até o vencimento**; cheque indexador, crédito/FGC, custo (taxa) e come-cotas.
    - **Caixa parado**: muito % em fundo DI/RF caro (> ~0,5% a.a. para DI) — comparar com Tesouro Selic / CDB / fundo DI barato, líquido de taxas e IR.

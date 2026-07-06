@@ -1,0 +1,47 @@
+# Mapa ticker -> setor economico (classificacao GICS simplificada, em PT).
+# Editavel. Ticker sem linha aqui aparece como INDEFINIDO no parser (regra anti-invencao: nao chutar).
+# Chaves com 6+ caracteres tambem casam por substring do nome do produto (ex.: TESOURO SELIC).
+# formato: ticker,setor
+# --- Renda fixa / previdencia (nao contam no teto setorial; caixa tem regra propria) ---
+TESOURO SELIC,Renda fixa
+TESOURO IPCA,Renda fixa
+TESOURO PREFIXADO,Renda fixa
+BRADESCO FUNDO DE INVESTIMENTO,Renda fixa
+BRADESCO VGBL,Previdência (renda fixa)
+# --- ETFs (look-through em etf_setores.csv) ---
+IVV,ETF (look-through)
+# --- Cripto (satelite) ---
+IBIT,Cripto (satélite)
+# --- FIIs ---
+XPML11,Imobiliário (FII)
+TRXF11,Imobiliário (FII)
+# --- Acoes BR ---
+BBSE3,Financeiro
+ITSA4,Financeiro
+BBDC4,Financeiro
+TAEE11,Utilities/Elétricas
+CPLE6,Utilities/Elétricas
+EGIE3,Utilities/Elétricas
+VALE3,Materiais/Mineração
+STBP3,Industrial
+# --- Stocks US ---
+MU,Tecnologia
+NVDA,Tecnologia
+MSFT,Tecnologia
+CRWD,Tecnologia
+CRM,Tecnologia
+GOOG,Comunicação
+META,Comunicação
+VZ,Comunicação
+DIS,Comunicação
+AMZN,Consumo discricionário
+BABA,Consumo discricionário
+V,Financeiro
+JPM,Financeiro
+BAC,Financeiro
+BRK.B,Financeiro
+LLY,Saúde
+XOM,Energia
+CMI,Industrial
+RIO,Materiais/Mineração
+VST,Utilities/Elétricas

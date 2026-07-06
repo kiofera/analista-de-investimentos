@@ -1,0 +1,9 @@
+# Composicao setorial de ETFs para look-through (doutrina: concentracao por setor).
+# REGRA ANTI-INVENCAO: cada conjunto de pesos DEVE ter fonte + data. Sem linhas para um ETF,
+# o parser reporta "look-through PENDENTE" (nunca chuta pesos).
+# Atualizar a cada analise se a fonte tiver dado mais novo (pagina do emissor e a fonte primaria:
+# iShares/Vanguard/SSGA; agregadores como etf.com e Yahoo/holdings servem de secundaria).
+# NOTA 2026-07-05: iShares (PDF), etfdb, slickcharts, financecharts e macromicro bloquearam fetch
+# automatizado (HTTP 403). Preencher IVV na proxima analise via WebSearch/fonte que responda,
+# registrando fonte+data. Ate la o IVV aparece como pendente — melhor pendente que inventado.
+# formato: etf,setor,peso_pct,fonte,data

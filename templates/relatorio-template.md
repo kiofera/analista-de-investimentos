@@ -15,6 +15,8 @@
 
 ### 2b. Concentração por setor (com look-through dos ETFs)
 > Ação direta conta no setor dela; ETF tem o peso distribuído pelos setores das empresas que carrega.
+> O parser gera esta tabela automaticamente (mapas em `data/setores.csv` e `data/etf_setores.csv`);
+> resolver pendências (INDEFINIDO / look-through PENDENTE) antes de concluir.
 | Setor | Direto | Via ETF | Total | Teto (~25–30%) |
 |---|---|---|---|---|
 | | __% | __% | __% | |

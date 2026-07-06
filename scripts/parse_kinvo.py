@@ -18,6 +18,12 @@ Lições embutidas (ver SKILL.md):
   - Sanidade: posições com valorização absurda (>+300%) ou peso alto são SINALIZADAS para
     verificação de cotação ao vivo antes de reportar (caso Micron: dado correto, mas só dá pra
     saber checando a cotação real).
+
+Concentração por setor (doutrina v2, look-through de ETFs):
+  - Mapa ticker->setor em  data/setores.csv   (editável; sem linha = INDEFINIDO, nunca chutar).
+  - Composição de ETFs em  data/etf_setores.csv (pesos SEMPRE com fonte+data; ETF sem linhas =
+    look-through PENDENTE, reportado explicitamente).
+  - Ação direta conta no setor dela; ETF distribui o saldo pelos setores que carrega.
 """
 import sys, os, glob, zipfile, collections
 import xml.etree.ElementTree as ET
@@ -93,6 +99,103 @@ def find_col(cmap, *needles):
     return None
 
 
+def first_col(cmap, options):
+    """Primeira coluna existente entre as opções. (Não usar `or` — índice 0 é falsy!)"""
+    for o in options:
+        i = find_col(cmap, o)
+        if i is not None:
+            return i
+    return None
+
+
+# ---------------------------------------------------------------- setores ----
+
+def _data_dir():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
+
+
+def _ler_csv_simples(nome):
+    """Lê CSV em data/ ignorando comentários (#) e linhas vazias. None se não existir."""
+    path = os.path.join(_data_dir(), nome)
+    if not os.path.exists(path):
+        return None
+    import csv as _csv
+    out = []
+    with open(path, encoding="utf-8-sig") as f:
+        for line in f:
+            s = line.strip()
+            if not s or s.startswith("#"):
+                continue
+            out.append(next(_csv.reader([s])))
+    return out
+
+
+def _ticker(produto):
+    p = (produto or "").strip()
+    return (p.split(" - ")[0] if " - " in p else p).strip().upper()
+
+
+def _setor_de(produto, smap):
+    tk = _ticker(produto)
+    if tk in smap:
+        return smap[tk]
+    pu = (produto or "").upper()
+    for k, v in smap.items():             # chaves longas casam por substring (ex.: TESOURO SELIC)
+        if len(k) >= 6 and k in pu:
+            return v
+    return None
+
+
+def analisar_setores(holds, total):
+    """holds = [(produto, saldo)]. Imprime concentração por setor com look-through de ETFs."""
+    rows_s = _ler_csv_simples("setores.csv")
+    if rows_s is None:
+        print("\nAVISO: data/setores.csv não encontrado — análise setorial pulada.")
+        return
+    smap = {r[0].strip().upper(): r[1].strip() for r in rows_s if len(r) >= 2}
+    emap = collections.defaultdict(list)
+    for r in (_ler_csv_simples("etf_setores.csv") or []):
+        if len(r) >= 3:
+            emap[r[0].strip().upper()].append((r[1].strip(), num(r[2])))
+
+    direto = collections.defaultdict(float)
+    via_etf = collections.defaultdict(float)
+    pendentes, indefinidos = [], []
+    for prod, sal in holds:
+        tk = _ticker(prod)
+        setor = _setor_de(prod, smap)
+        if tk in emap:                                    # ETF com composição mapeada
+            soma = sum(p for _, p in emap[tk])
+            for s, p in emap[tk]:
+                via_etf[s] += sal * p / 100.0
+            if soma < 99.0:                               # resto não mapeado fica explícito
+                via_etf["(ETF: fatia não mapeada)"] += sal * (100.0 - soma) / 100.0
+        elif setor == "ETF (look-through)":               # ETF sem composição -> pendente
+            pendentes.append((prod, sal))
+        elif setor is None:
+            indefinidos.append((prod, sal))
+        else:
+            direto[setor] += sal
+
+    print("\n--- Concentração por setor (com look-through de ETFs) ---")
+    print("    Teto da doutrina: ~25–30% por setor econômico (renda fixa/previdência têm regra própria)")
+    print(f"    {'SETOR':28s} {'DIRETO':>13s} {'VIA ETF':>11s} {'TOTAL':>13s} {'% CART':>7s}  FLAG")
+    setores = sorted(set(direto) | set(via_etf),
+                     key=lambda s: -(direto.get(s, 0) + via_etf.get(s, 0)))
+    sem_teto = ("Renda fixa", "Previdência (renda fixa)")
+    for s in setores:
+        d, v = direto.get(s, 0.0), via_etf.get(s, 0.0)
+        t = d + v
+        pct = t / total * 100 if total else 0.0
+        flag = "ALERTA-SETOR" if pct > 25 and s not in sem_teto else ""
+        print(f"    {s[:28]:28s} {d:13,.0f} {v:11,.0f} {t:13,.0f} {pct:6.2f}%  {flag}")
+    for prod, sal in pendentes:
+        print(f"    >>> LOOK-THROUGH PENDENTE: {prod[:40]} (R$ {sal:,.0f}) — preencher "
+              f"data/etf_setores.csv com fonte+data antes de concluir a leitura setorial.")
+    for prod, sal in indefinidos:
+        print(f"    >>> SETOR INDEFINIDO: {prod[:40]} (R$ {sal:,.0f}) — mapear em data/setores.csv.")
+
+
 def analisar_posicao(path):
     rows = read_xlsx(path)
     cm = colmap(rows[0])
@@ -141,6 +244,9 @@ def analisar_posicao(path):
         print("\n  >>> SINALIZADOS para atenção/verificação:")
         for prod, val, peso, flag in flags:
             print(f"      [{flag}] {prod[:50]} (valoriz {val:.0f}%, peso {peso:.1f}%)")
+
+    analisar_setores([(r[ci_prod], num(r[ci_sal])) for r in hold], total)
+
     current = set(r[ci_prod] for r in hold)
     return total, current
 
@@ -152,10 +258,10 @@ def analisar_extrato(path, current=None):
     ci_data = find_col(cm, "data")
     ci_prod = find_col(cm, "produto")
     ci_desc = find_col(cm, "descri")
-    ci_tot = find_col(cm, "valor total") or find_col(cm, "total")
+    ci_tot = first_col(cm, ["valor total", "total"])
     ci_inst = find_col(cm, "institui")
     ci_qtd = find_col(cm, "quantidade")
-    ci_camb = find_col(cm, "câmbio") or find_col(cm, "cambio")
+    ci_camb = first_col(cm, ["câmbio", "cambio"])
     data = rows[1:]
 
     print("\n" + "=" * 70)
@@ -179,6 +285,15 @@ def analisar_extrato(path, current=None):
     print("\n--- Proventos recebidos (BRL) ---")
     for k, v in prov.items():
         print(f"  {k:22s} R$ {v:,.2f}")
+
+    # Proventos por ano — acompanha a evolução da renda (papel da carteira BR)
+    prov_ano = collections.defaultdict(float)
+    for r in data:
+        if r[ci_desc] in ("Dividendos", "Juros sobre capital", "Rendimentos") and r[ci_data]:
+            prov_ano[r[ci_data][-4:]] += num(r[ci_tot])
+    print("\n--- Proventos por ano (renda gerada) ---")
+    for y in sorted(prov_ano):
+        print(f"  {y}: R$ {prov_ano[y]:,.2f}")
 
     # Resultado realizado de produtos encerrados
     agg = collections.defaultdict(lambda: {"apl": 0.0, "res": 0.0, "prov": 0.0})
@@ -248,8 +363,10 @@ def main():
     else:
         print("\nAVISO: não achei o EXTRATO (nome com 'extrato').")
     if pos:
-        print("\nLEMBRETE: confira se o SALDO BRUTO TOTAL bate com o relatório/topo do Kinvo, "
-              "e VERIFIQUE com cotação ao vivo qualquer posição marcada VERIFICAR-COTACAO.")
+        print("\nLEMBRETE: confira se o SALDO BRUTO TOTAL bate com o relatório/topo do Kinvo; "
+              "VERIFIQUE com cotação ao vivo qualquer posição marcada VERIFICAR-COTACAO; e "
+              "resolva pendências de setor (INDEFINIDO / look-through PENDENTE) antes de "
+              "concluir a leitura de concentração setorial.")
 
 
 if __name__ == "__main__":
