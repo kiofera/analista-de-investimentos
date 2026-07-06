@@ -10,6 +10,9 @@ BRADESCO FUNDO DE INVESTIMENTO,Renda fixa
 BRADESCO VGBL,Previdência (renda fixa)
 # --- ETFs (look-through em etf_setores.csv) ---
 IVV,ETF (look-through)
+QQQ,ETF (look-through)
+PSCT,ETF (look-through)
+TFLO,ETF (look-through)
 # --- Cripto (satelite) ---
 IBIT,Cripto (satélite)
 # --- FIIs ---
@@ -17,6 +20,7 @@ XPML11,Imobiliário (FII)
 TRXF11,Imobiliário (FII)
 # --- Acoes BR ---
 BBSE3,Financeiro
+BPAC11,Financeiro
 ITSA4,Financeiro
 BBDC4,Financeiro
 TAEE11,Utilities/Elétricas

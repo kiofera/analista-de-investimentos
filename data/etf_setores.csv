@@ -3,7 +3,22 @@
 # o parser reporta "look-through PENDENTE" (nunca chuta pesos).
 # Atualizar a cada analise se a fonte tiver dado mais novo (pagina do emissor e a fonte primaria:
 # iShares/Vanguard/SSGA; agregadores como etf.com e Yahoo/holdings servem de secundaria).
-# NOTA 2026-07-05: iShares (PDF), etfdb, slickcharts, financecharts e macromicro bloquearam fetch
-# automatizado (HTTP 403). Preencher IVV na proxima analise via WebSearch/fonte que responda,
-# registrando fonte+data. Ate la o IVV aparece como pendente — melhor pendente que inventado.
 # formato: etf,setor,peso_pct,fonte,data
+# IVV: top-5 setores do fact sheet oficial iShares (posicao 31/03/2026), obtido via snippet de busca
+# (o PDF bloqueia fetch direto). Soma 74,96%; o resto (~25%) fica como "fatia nao mapeada" ate
+# obter o breakdown completo — honesto, nao inventado.
+IVV,Tecnologia,32.84,fact sheet iShares (31/03/2026),2026-07-05
+IVV,Financeiro,12.57,fact sheet iShares (31/03/2026),2026-07-05
+IVV,Comunicação,10.26,fact sheet iShares (31/03/2026),2026-07-05
+IVV,Consumo discricionário,9.84,fact sheet iShares (31/03/2026),2026-07-05
+IVV,Saúde,9.45,fact sheet iShares (31/03/2026),2026-07-05
+# QQQ: fontes divergem (Schwab 57,5% TI em 02/06/2026; Invesco 4T25 64,6%). Uso Schwab (mais
+# recente/datado); resto nao mapeado.
+QQQ,Tecnologia,57.5,Schwab via busca (02/06/2026),2026-07-05
+# PSCT: ~100% tech por construcao do indice (S&P SmallCap 600 IT); dados estilo Morningstar
+# via US News: 93,52% tech / 3,78% fin / 2,70% ind (sem data explicita na fonte).
+PSCT,Tecnologia,93.52,US News/Morningstar (s/ data),2026-07-05
+PSCT,Financeiro,3.78,US News/Morningstar (s/ data),2026-07-05
+PSCT,Industrial,2.70,US News/Morningstar (s/ data),2026-07-05
+# TFLO: renda fixa USD (Treasuries flutuantes) — nao e setor de bolsa.
+TFLO,Renda fixa (USD),100,stockanalysis.com (02/07/2026),2026-07-05
