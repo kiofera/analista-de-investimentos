@@ -2,6 +2,15 @@
 
 **Patrimônio:** R$ [____] | **Mandato:** [perfil] | **Fonte:** Kinvo (posição + extrato)
 
+## 0. Acompanhamento das recomendações anteriores
+> Vem de `decisoes.md` (recomendação vs. execução). Conferido no extrato/posição desta rodada.
+> Quando o gestor divergiu, o motivo dele entra aqui — é a tese dele, vale mais que o silêncio.
+| Data rec. | Ativo | Recomendação | Status | O que aconteceu / motivo do gestor |
+|---|---|---|---|---|
+| | | | seguida / parcial / ignorada / divergente / pendente | |
+
+**Leitura:** [1–2 linhas: a execução está seguindo o plano? onde diverge e por quê? isso muda alguma recomendação abaixo?]
+
 ## 1. Resumo executivo
 [3–5 linhas: o que mudou, o que exige decisão agora, a recomendação principal.]
 
@@ -27,7 +36,15 @@
 | | | (só US) | | | manter/reforçar/reduzir/sair/comprar/sem ação-falta dado | |
 
 > Antes de recomendar VENDA, pesar o **custo tributário** (IR sobre ganho; isenção mensal de R$ 20 mil em
-> ações BR; come-cotas; ativos no exterior). Venda fiscalmente burra pode ser pior que não agir.
+> ações BR; come-cotas; **exterior: 15% apurado anualmente na DAA, Lei 14.754/2023 — sem isenção mensal;
+> perdas no exterior compensam ganhos no mesmo ajuste**). Venda fiscalmente burra pode ser pior que não agir.
+
+> **Retornos em 2 moedas (US):** preencha `precos.csv` na pasta do cliente e rode o parser — a tabela
+> "custo em USD vs BRL" sai com RET USD / RET BRL / CÂMBIO por posição.
+
+---
+**Ao fechar o relatório:** registrar cada recomendação nova em `decisoes.md` como *pendente* (data, ativo,
+recomendação). Na próxima análise, a seção 0 é preenchida a partir dali.
 
 ## 4. Renda fixa — marcação a mercado vs. carregar
 > Separar sempre os dois casos: perda de marcação só é risco real se houver necessidade de liquidez antes do vencimento.

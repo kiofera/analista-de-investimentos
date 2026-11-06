@@ -25,10 +25,25 @@ Uma pasta por cliente dentro de `Mercado Financeiro/` (ex.: `Maria Clara Malutta
 - **PDFs:** inventariados com instrução de extração (pdftotext; PDF-imagem como o do Kinvo →
   renderizar com Poppler e ler visualmente).
 - `mandato-*.md` — regras do cliente (ver `templates/mandato-template.md`). Se não existir, crie a
-  partir do template e confirme as regras com o usuário.
+  partir do template e confirme as regras com o usuário. Mantenha a linha `Última revisão:` — o
+  parser avisa quando o mandato é mais antigo que o último relatório.
+- `decisoes.md` — **registro de recomendação vs. execução** (ver `templates/decisoes-template.md`).
+  Toda recomendação de relatório entra como *pendente*; na análise seguinte o status é atualizado
+  (seguida / parcial / ignorada / divergente) conferindo extrato e posição, e o motivo do gestor é
+  registrado quando ele diverge. É o que faz o histórico "aprender".
+- `precos.csv` (opcional) — `ticker,preco,moeda,data,fonte` com uma linha `USDBRL`. Com ele o parser
+  calcula retorno em USD, em BRL e efeito câmbio das posições em dólar. Preços sempre com fonte+data.
+- `carteira-snapshot-AAAA-MM-DD.md/.csv` — **gerados pelo parser** a partir da posição (data = data do
+  arquivo de posição). Nunca sobrescreve; o `.csv` serve de base para o delta do snapshot seguinte.
 
 Duas posições de fontes diferentes na mesma pasta → o parser avisa sobre **dupla contagem**;
-reconcilie antes de somar. Se não houver posição em nenhum formato, **peça ao usuário**. Não invente números.
+reconcilie antes de somar. Vários extratos → o parser usa o **mais recente** e lista os ignorados.
+Se não houver posição em nenhum formato, **peça ao usuário**. Não invente números.
+
+**A posição em Excel é insubstituível.** O extrato e o PDF-imagem do Kinvo não trazem a posição
+atual. Se o parser imprimir `POSIÇÃO DESATUALIZADA` ou listar produtos em `NÃO LISTADAS NA POSIÇÃO`,
+**pare e peça o export** (Kinvo: Carteira → Resumo de produtos → Exportar Excel) antes de concluir
+qualquer número de alocação, concentração ou resultado realizado.
 
 ## Procedimento
 
@@ -49,7 +64,11 @@ reconcilie antes de somar. Se não houver posição em nenhum formato, **peça a
    para instalar as dependências. **Trate as saídas de modo descoberta:** interprete as colunas e
    incorpore os dados à análise manualmente (com a mesma disciplina de fonte+data).
 
-3. **Confira a reconciliação.** O "SALDO BRUTO TOTAL" da posição deve bater com o topo do relatório da fonte e a soma por classe com a alocação. Se houver mais de uma posição (fontes diferentes), resolva a dupla contagem. Se não bater, investigue antes de seguir.
+3. **Confira a reconciliação e as checagens de processo.** O "SALDO BRUTO TOTAL" da posição deve bater com o topo do relatório da fonte e a soma por classe com a alocação. Se houver mais de uma posição (fontes diferentes), resolva a dupla contagem. Se não bater, investigue antes de seguir. Trate o que o parser apontar:
+   - `POSIÇÃO DESATUALIZADA` / `NÃO LISTADAS NA POSIÇÃO` → peça o export da posição; não conclua alocação/encerrados com posição velha.
+   - `MANDATO DESATUALIZADO` → registre no mandato as pendências pedidas pelos relatórios anteriores (novos ativos/classes, teses, limites) e atualize `Última revisão:`.
+   - `SEM decisoes.md` → crie a partir do template. Com ele presente, **atualize o status** de cada recomendação anterior conferindo o extrato (seguida / parcial / ignorada / divergente) e **registre o motivo do gestor** quando divergiu — isso abre a seção 0 do relatório.
+   - Snapshot gerado → confira o delta vs. o anterior; ele mostra aportes, saídas e o que mudou de tamanho.
 
 4. **VERIFIQUE cotações sinalizadas (regra de ouro — lição da Micron).** Para todo papel marcado `VERIFICAR-COTACAO` (valorização ≥ +300% ou número que pareça absurdo), **confirme com cotação ao vivo** (`WebSearch`/`WebFetch`) antes de reportar: quantidade (do extrato) × preço atual × câmbio ≈ saldo do Kinvo? Um número absurdo pode ser **real** (ex.: Micron a US$ 981 = +879%, dado correto) ou **erro** — só dá pra saber checando. Nunca afirme nem retrate um valor sem verificar a cotação real.
 
@@ -65,7 +84,7 @@ reconcilie antes de somar. Se não houver posição em nenhum formato, **peça a
    - **Cada número leva fonte + data**; dado que não veio = **"indisponível"**. Se não deu pra verificar, veredito = **"sem ação — falta dado"** (nunca palpite).
    - **BR-dividendos:** cheque yield trap (yield alto pode ser preço caindo — cruze com payout/lucro); use os limiares da doutrina (payout, dív.líq/EBITDA, ROE).
    - **US-crescimento:** cheque **diluição** (shares outstanding + SBC), não só receita; use os limiares da doutrina.
-   - **Ativos US:** reporte retorno em **USD e BRL** (use a seção "custo em USD vs BRL" do parser + preço do ativo e USD/BRL ao vivo) e o efeito câmbio.
+   - **Ativos US:** reporte retorno em **USD e BRL** e o efeito câmbio. Preencha `precos.csv` na pasta do cliente (ticker, preço, moeda, data, fonte + linha `USDBRL`) com as cotações verificadas e rode o parser de novo: a tabela "custo em USD vs BRL" sai com RET USD / RET BRL / CÂMBIO por posição, sem conta de cabeça.
 
 6. **Aplique doutrina + mandato.** Para cada posição classifique **manter / reforçar / reduzir / sair**, e para novas ideias **comprar**, considerando:
    - **Papel de cada mercado (doutrina):** BR = renda/dividendos (preferir sólidas boas pagadoras; evitar small cap BR especulativa); US = crescimento de capital (núcleo de grandes consolidadas + satélite de small/mid caps de tecnologia/IA/recursos/infraestrutura, sem perder o núcleo). Longo prazo, baixa rotatividade.
@@ -78,7 +97,7 @@ reconcilie antes de somar. Se não houver posição em nenhum formato, **peça a
    - **Mudança de fundamentos (passo 5)**: traduza deteriorações/melhoras (e tese quebrada) em compra/venda.
    - **Novas classes**: ETFs/commodities/contratos/cripto (≤3–5%) e VC/private (satélite ilíquido, ≤~5%, máximo rigor) só como satélite dimensionado, dentro do teto do mandato.
 
-7. **Gere o relatório** em `<pasta-do-cliente>/relatorio-AAAA-MM-DD.md` (use `templates/relatorio-template.md`). Inclua, quando fizer sentido, **cenários por horizonte (1/5/10/20 anos)** — faixas pessimista/base/otimista com premissas explícitas, **nunca preço-alvo pontual** (é o item de maior incerteza). Atualize também o snapshot se útil.
+7. **Gere o relatório** em `<pasta-do-cliente>/relatorio-AAAA-MM-DD.md` (use `templates/relatorio-template.md`). Abra com a **seção 0 — acompanhamento das recomendações anteriores** (vem de `decisoes.md`: o que foi seguido, ignorado, divergente, e o motivo do gestor). Inclua, quando fizer sentido, **cenários por horizonte (1/5/10/20 anos)** — faixas pessimista/base/otimista com premissas explícitas, **nunca preço-alvo pontual** (é o item de maior incerteza). O snapshot já foi gerado pelo parser; ao final, **registre em `decisoes.md` cada recomendação nova como pendente**.
 
 8. **Gere SEMPRE o PDF do relatório** (entregável padrão) a partir do .md:
    ```
@@ -89,6 +108,7 @@ reconcilie antes de somar. Se não houver posição em nenhum formato, **peça a
 9. **Entrega** conforme preferência do usuário (padrão atual: **PDF** na pasta do Drive + resumo por e-mail via Gmail). **Confirme antes de enviar e-mail.**
 
 ## Lições embutidas (gotchas do Kinvo)
+- **O gestor costuma exportar só o extrato + PDF.** Aconteceu em 05/07 e 06/11/2026: sem o Excel de posição, o parser lia uma posição de meses atrás como "atual" e listava compras novas como prejuízo realizado. Hoje o parser avisa (`POSIÇÃO DESATUALIZADA`, `NÃO LISTADAS`); a resposta certa é **pedir o export**, não ler o PDF-imagem página a página.
 - **Avenue (EUA): "Valor Total" já vem em BRL**; a coluna Câmbio é só referência. **Não** multiplique por câmbio (validado: soma de dividendos bate ao centavo com o relatório).
 - **A coluna "Rentabilidade (%)" do Kinvo é bugada** em vários papéis. Calcule sempre `saldo/aplicado − 1` (não inclui dividendos já recebidos — some os proventos do extrato quando quiser o retorno total).
 - **"Valor aplicado" da posição = custo líquido atual** (aplicações − resgates), não o total histórico.

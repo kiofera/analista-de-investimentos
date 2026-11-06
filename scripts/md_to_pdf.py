@@ -68,6 +68,10 @@ def main():
     body = markdown.markdown(text, extensions=["tables", "fenced_code", "sane_lists"])
     html = HTML.format(css=CSS, body=body)
 
+    # Cabeçalho de página: o 1º título (# ...) do .md — traz cliente + data em cada página.
+    titulo = next((l[2:].strip() for l in text.splitlines() if l.startswith("# ")), "")
+    titulo = titulo.replace("**", "")[:110]
+
     wk = find_wkhtmltopdf()
     if not wk:
         print("ERRO: wkhtmltopdf não encontrado. Instale: winget install wkhtmltopdf.wkhtmltox")
@@ -77,11 +81,16 @@ def main():
         t.write(html)
         html_path = t.name
     try:
-        r = subprocess.run([wk, "--encoding", "utf-8", "--enable-local-file-access",
-                            "--footer-font-size", "7", "--footer-spacing", "4",
-                            "--footer-right", "pág. [page]/[topage]",
-                            "--quiet", html_path, pdf_path],
-                           capture_output=True, text=True)
+        cmd = [wk, "--encoding", "utf-8", "--enable-local-file-access",
+               "--footer-font-size", "7", "--footer-spacing", "4",
+               "--footer-right", "pág. [page]/[topage]",
+               "--footer-left", "Apoio à decisão — não é recomendação regulada (CVM)"]
+        if titulo:
+            cmd += ["--title", titulo,
+                    "--header-font-size", "7", "--header-spacing", "4",
+                    "--header-left", titulo, "--header-right", "[date]"]
+        cmd += ["--quiet", html_path, pdf_path]
+        r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0 and not os.path.exists(pdf_path):
             print("ERRO wkhtmltopdf:", r.stderr[-500:])
             sys.exit(1)

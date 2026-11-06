@@ -5,7 +5,7 @@ Lê os relatórios de carteira de uma pasta de cliente — QUALQUER arquivo de d
 e imprime um resumo estruturado. Usa apenas a biblioteca padrão.
 
 Uso:
-    python parse_carteira.py "<pasta-do-cliente>"
+    python parse_carteira.py "<pasta-do-cliente>" [--no-snapshot]
 
 Como funciona (ingestão em 3 camadas):
   1. INVENTÁRIO — lista todos os arquivos de dados da pasta (.xlsx/.xls/.csv/.pdf).
@@ -18,6 +18,27 @@ Como funciona (ingestão em 3 camadas):
      assinatura em detectar_tipo() para virar leitura automática.
   PDFs são inventariados com a instrução de extração (pdftotext; se for imagem, pdftoppm/Poppler).
 
+Checagens de consistência (adicionadas em 2026-11 após auditoria com dados reais):
+  - POSIÇÃO DESATUALIZADA: a posição (fonte autoritativa) é comparada com a data mais recente do
+    extrato e com a data de hoje. Posição velha gera aviso em destaque + instrução de exportação.
+  - Vários EXTRATOS na pasta: usa o mais recente (maior data final) e lista os ignorados.
+  - "ENCERRADO" só quando a quantidade líquida no extrato zerou. Produto com quantidade líquida
+    positiva mas ausente da posição sai como "NÃO LISTADA NA POSIÇÃO" (sinal de posição velha),
+    nunca como prejuízo realizado.
+  - Resíduos de venda total (quantidade ~0 por arredondamento) não aparecem na tabela de custo USD.
+  - Flag CONCENTRACAO (teto por papel) não dispara em renda fixa/previdência/caixa.
+  - MANDATO: avisa se o mandato é mais antigo que o último relatório ou se não existe.
+  - DECISÕES: avisa se não existe decisoes.md (registro de recomendação vs. execução).
+
+Arquivos opcionais na pasta do cliente:
+  - precos.csv  (ticker,preco,moeda,data,fonte; linha USDBRL obrigatória para câmbio) — com ele o
+    parser calcula retorno em USD, em BRL e o efeito câmbio das posições em dólar. Preços vêm do
+    analista COM fonte+data (anti-invenção preservada).
+
+Saída gerada (a menos de --no-snapshot):
+  - carteira-snapshot-AAAA-MM-DD.md + .csv (data = data do arquivo de posição). Nunca sobrescreve
+    um snapshot existente. Com um .csv anterior na pasta, imprime o delta por posição.
+
 Lições embutidas (ver SKILL.md):
   - "Valor Total" da Avenue JÁ está em BRL; a coluna Câmbio é só referência. NÃO multiplicar.
   - A coluna "Rentabilidade (%)" do Kinvo é BUGADA em vários papéis -> calcular saldo/aplicado-1.
@@ -29,7 +50,7 @@ Concentração por setor (doutrina v2, look-through de ETFs):
   - Composição de ETFs em  data/etf_setores.csv (pesos SEMPRE com fonte+data; sem linhas =
     look-through PENDENTE, reportado explicitamente).
 """
-import sys, os, glob, re, zipfile, collections
+import sys, os, glob, re, zipfile, collections, datetime
 import xml.etree.ElementTree as ET
 
 try:                                  # saída consistente em UTF-8
@@ -38,6 +59,11 @@ except Exception:
     pass
 
 NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+PROVENTOS = ("Dividendos", "Juros sobre capital", "Rendimentos")
+EPS_QTD = 1e-3                        # quantidade abaixo disto = posição zerada (resíduo de float)
+DIAS_POSICAO_VS_EXTRATO = 7           # extrato mais novo que a posição em mais que isto -> aviso
+DIAS_POSICAO_VELHA = 30               # posição com mais que isto de idade -> aviso
+CLASSES_SEM_TETO_PAPEL = ("previd", "tesouro", "renda fixa", "caixa", "poupan", "cdb", "lci", "lca")
 
 
 def num(s):
@@ -53,6 +79,21 @@ def num(s):
         return float(s)
     except ValueError:
         return 0.0
+
+
+def data_br(s):
+    """'dd/mm/aaaa' (ou 'aaaa-mm-dd') -> date; None se não reconhecer."""
+    s = (s or "").strip()[:10]
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def fmt_data(d):
+    return d.strftime("%d/%m/%Y") if d else "?"
 
 
 # ------------------------------------------------------------- leitura ------
@@ -176,9 +217,8 @@ def _data_dir():
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 
 
-def _ler_csv_simples(nome):
-    """Lê CSV em data/ ignorando comentários (#) e linhas vazias. None se não existir."""
-    path = os.path.join(_data_dir(), nome)
+def _ler_csv_simples(path):
+    """Lê CSV ignorando comentários (#) e linhas vazias. None se não existir."""
     if not os.path.exists(path):
         return None
     import csv as _csv
@@ -194,7 +234,10 @@ def _ler_csv_simples(nome):
 
 def _ticker(produto):
     p = (produto or "").strip()
-    return (p.split(" - ")[0] if " - " in p else p).strip().upper()
+    for sep in (" - ", " — "):
+        if sep in p:
+            return p.split(sep)[0].strip().upper()
+    return p.upper()
 
 
 def _setor_de(produto, smap):
@@ -208,15 +251,25 @@ def _setor_de(produto, smap):
     return None
 
 
+def _classe_sem_teto(classe):
+    """Classes em que o teto por papel do mandato não se aplica (caixa/RF/previdência)."""
+    c = (classe or "").lower()
+    if "imobili" in c:                    # FII é bolsa, tem teto
+        return False
+    if c.strip() == "fundo":              # fundo DI/RF (Kinvo chama só de "Fundo")
+        return True
+    return any(k in c for k in CLASSES_SEM_TETO_PAPEL)
+
+
 def analisar_setores(holds, total):
     """holds = [(produto, saldo)]. Imprime concentração por setor com look-through de ETFs."""
-    rows_s = _ler_csv_simples("setores.csv")
+    rows_s = _ler_csv_simples(os.path.join(_data_dir(), "setores.csv"))
     if rows_s is None:
         print("\nAVISO: data/setores.csv não encontrado — análise setorial pulada.")
         return
     smap = {r[0].strip().upper(): r[1].strip() for r in rows_s if len(r) >= 2}
     emap = collections.defaultdict(list)
-    for r in (_ler_csv_simples("etf_setores.csv") or []):
+    for r in (_ler_csv_simples(os.path.join(_data_dir(), "etf_setores.csv")) or []):
         if len(r) >= 3:
             emap[r[0].strip().upper()].append((r[1].strip(), num(r[2])))
 
@@ -244,7 +297,7 @@ def analisar_setores(holds, total):
     print(f"    {'SETOR':28s} {'DIRETO':>13s} {'VIA ETF':>11s} {'TOTAL':>13s} {'% CART':>7s}  FLAG")
     setores = sorted(set(direto) | set(via_etf),
                      key=lambda s: -(direto.get(s, 0) + via_etf.get(s, 0)))
-    sem_teto = ("Renda fixa", "Previdência (renda fixa)")
+    sem_teto = ("Renda fixa", "Previdência (renda fixa)", "Renda fixa (USD)")
     for s in setores:
         d, v = direto.get(s, 0.0), via_etf.get(s, 0.0)
         t = d + v
@@ -261,6 +314,7 @@ def analisar_setores(holds, total):
 # ---------------------------------------------------------------- análises ---
 
 def analisar_posicao(rows, label):
+    """Imprime a análise da posição. Retorna dict com total, current (set), holds (lista)."""
     cm = colmap(rows[0])
     ci_prod = find_col(cm, "produto")
     ci_classe = find_col(cm, "classe")
@@ -294,7 +348,7 @@ def analisar_posicao(rows, label):
         flag = ""
         if abs(val) >= 300:
             flag += "VERIFICAR-COTACAO "
-        if peso >= 5:
+        if peso >= 5 and not _classe_sem_teto(r[ci_classe]):
             flag += "CONCENTRACAO "
         if val <= -25:
             flag += "PERDA "
@@ -306,15 +360,28 @@ def analisar_posicao(rows, label):
         print("\n  >>> SINALIZADOS para atenção/verificação:")
         for prod, val, peso, flag in flags:
             print(f"      [{flag}] {prod[:50]} (valoriz {val:.0f}%, peso {peso:.1f}%)")
+    print("  (teto por papel não se aplica a caixa/renda fixa/previdência — regra própria no mandato)")
 
-    analisar_setores([(r[ci_prod], num(r[ci_sal])) for r in hold], total)
+    holds = [(r[ci_prod], r[ci_classe], num(r[ci_apl]), num(r[ci_sal])) for r in hold]
+    analisar_setores([(p, s) for p, _, _, s in holds], total)
+    return {"total": total, "current": set(p for p, _, _, _ in holds), "holds": holds}
 
-    current = set(r[ci_prod] for r in hold)
-    return total, current
+
+def extrato_periodo(rows):
+    """(data_min, data_max) do extrato, lendo a coluna Data."""
+    cm = colmap(rows[0])
+    ci_data = find_col(cm, "data")
+    if ci_data is None:
+        return None, None
+    ds = [data_br(r[ci_data]) for r in rows[1:] if len(r) > ci_data]
+    ds = [d for d in ds if d]
+    return (min(ds), max(ds)) if ds else (None, None)
 
 
-def analisar_extrato(rows, label, current=None):
+def analisar_extrato(rows, label, current=None, saldos=None, precos=None):
     current = current or set()
+    saldos = saldos or {}
+    precos = precos or {}
     cm = colmap(rows[0])
     ci_data = find_col(cm, "data")
     ci_prod = find_col(cm, "produto")
@@ -328,8 +395,8 @@ def analisar_extrato(rows, label, current=None):
     print("\n" + "=" * 70)
     print("EXTRATO / HISTÓRICO:", label)
     print("=" * 70)
-    datas = [r[ci_data] for r in data if r[ci_data]]
-    print(f"Transações: {len(data)} | Período: {datas[-1]} a {datas[0]}")
+    dmin, dmax = extrato_periodo(rows)
+    print(f"Transações: {len(data)} | Período: {fmt_data(dmin)} a {fmt_data(dmax)}")
 
     print("\n--- Atividade (compras/resgates) por ano ---")
     neg = collections.Counter(r[ci_data][-4:] for r in data
@@ -341,40 +408,54 @@ def analisar_extrato(rows, label, current=None):
     prov = collections.defaultdict(float)
     for r in data:
         d = r[ci_desc]
-        if d in ("Dividendos", "Juros sobre capital", "Rendimentos"):
+        if d in PROVENTOS:
             prov[d] += num(r[ci_tot])
     print("\n--- Proventos recebidos (BRL) ---")
     for k, v in prov.items():
         print(f"  {k:22s} R$ {v:,.2f}")
 
-    # Proventos por ano — acompanha a evolução da renda (papel da carteira BR)
     prov_ano = collections.defaultdict(float)
     for r in data:
-        if r[ci_desc] in ("Dividendos", "Juros sobre capital", "Rendimentos") and r[ci_data]:
+        if r[ci_desc] in PROVENTOS and r[ci_data]:
             prov_ano[r[ci_data][-4:]] += num(r[ci_tot])
     print("\n--- Proventos por ano (renda gerada) ---")
     for y in sorted(prov_ano):
         print(f"  {y}: R$ {prov_ano[y]:,.2f}")
 
-    # Resultado realizado de produtos encerrados
-    agg = collections.defaultdict(lambda: {"apl": 0.0, "res": 0.0, "prov": 0.0})
+    # Agregado por produto: aplicado/resgatado/proventos + QUANTIDADE LÍQUIDA (decide "encerrado")
+    agg = collections.defaultdict(lambda: {"apl": 0.0, "res": 0.0, "prov": 0.0,
+                                           "qtd": 0.0, "tem_qtd": False})
     for r in data:
         a = agg[r[ci_prod]]
         d, v = r[ci_desc], num(r[ci_tot])
+        q = num(r[ci_qtd]) if ci_qtd is not None else 0.0
         if d.startswith("Aplica"):
-            a["apl"] += v
+            a["apl"] += v; a["qtd"] += q
         elif d == "Resgate":
-            a["res"] += v
-        elif d in ("Dividendos", "Juros sobre capital", "Rendimentos"):
+            a["res"] += v; a["qtd"] -= q
+        elif d in PROVENTOS:
             a["prov"] += v
-    print("\n--- Resultado realizado de produtos ENCERRADOS (res+prov-apl) ---")
-    print("    (encerrado = NÃO está na posição atual; usa a posição oficial como verdade)")
-    enc = []
+        if q:
+            a["tem_qtd"] = True
+
+    enc, nao_listadas = [], []
     for p, a in agg.items():
-        if a["apl"] > 0 and p not in current:
-            enc.append((a["res"] + a["prov"] - a["apl"], p, a))
+        if a["apl"] <= 0 or p in current:
+            continue
+        aberta = (a["qtd"] > EPS_QTD) if a["tem_qtd"] else (a["res"] == 0)
+        (nao_listadas if aberta else enc).append((a["res"] + a["prov"] - a["apl"], p, a))
+
+    print("\n--- Resultado realizado de produtos ENCERRADOS (res+prov-apl) ---")
+    print("    (encerrado = quantidade líquida zerada no extrato E fora da posição atual)")
     for res, p, a in sorted(enc):
         print(f"  {res:>11,.0f} | apl {a['apl']:>10,.0f} res {a['res']:>10,.0f} prov {a['prov']:>7,.0f} | {p[:40]}")
+    if nao_listadas:
+        print("\n  >>> NÃO LISTADAS NA POSIÇÃO (quantidade líquida > 0 no extrato, mas ausentes da posição):")
+        print("      Provável POSIÇÃO DESATUALIZADA — exporte a posição atual antes de concluir. "
+              "NÃO são prejuízo realizado.")
+        for _res, p, a in sorted(nao_listadas, key=lambda x: -x[2]["apl"]):
+            q = f"qtd {a['qtd']:,.4f}" if a["tem_qtd"] else "qtd indisponível"
+            print(f"      {p[:44]:44s} apl {a['apl']:>10,.0f} res {a['res']:>8,.0f}  {q}")
 
     # Custo em USD vs BRL para posições da Avenue (base p/ reportar retorno em 2 moedas)
     if ci_inst is not None and ci_camb is not None and ci_qtd is not None:
@@ -392,15 +473,44 @@ def analisar_extrato(rows, label, current=None):
                 f["brl"] += brl; f["usd"] += brl / cb; f["qtd"] += q
             elif d == "Resgate":
                 f["brl"] -= brl; f["usd"] -= brl / cb; f["qtd"] -= q
-        cur = [(p, f) for p, f in fx.items() if p in current and f["usd"] > 1]
+        # posição aberta = quantidade líquida > 0 (resíduo de venda total fica de fora)
+        cur = [(p, f) for p, f in fx.items() if f["qtd"] > EPS_QTD and f["usd"] > 1]
         if cur:
+            usdbrl = precos.get("USDBRL")
+            com_preco = bool(usdbrl)
             print("\n--- Posições EUA (Avenue): custo em USD vs BRL ---")
-            print("    Retorno BRL = saldo(posição)/custoBRL-1 ; Retorno USD = (qtd×preçoUSD ao vivo)/custoUSD-1")
-            print("    Efeito câmbio = Retorno BRL − Retorno USD. Buscar preço USD e USD/BRL ao vivo p/ completar.")
-            print(f"    {'PRODUTO':40s} {'QTD':>10s} {'CUSTO USD':>12s} {'CUSTO BRL':>12s} {'FX médio':>9s}")
+            print("    Retorno BRL = saldo(posição)/custoBRL-1 ; Retorno USD = (qtd×preçoUSD)/custoUSD-1")
+            print("    Efeito câmbio = Retorno BRL − Retorno USD.")
+            if com_preco:
+                print(f"    Preços de precos.csv (USD/BRL {usdbrl['preco']:.4f}, {usdbrl['fonte']}, "
+                      f"{usdbrl['data']}). Posição sem preço = 'indisponível'.")
+            else:
+                print("    Sem precos.csv na pasta: preencha (ticker,preco,moeda,data,fonte + linha USDBRL)"
+                      " para o parser calcular os retornos; até lá, buscar preço USD e câmbio ao vivo.")
+            cab = f"    {'PRODUTO':40s} {'QTD':>10s} {'CUSTO USD':>12s} {'CUSTO BRL':>12s} {'FX médio':>9s}"
+            if com_preco:
+                cab += f" {'RET USD':>9s} {'RET BRL':>9s} {'CÂMBIO':>8s}"
+            print(cab)
             for p, f in sorted(cur, key=lambda x: -x[1]["usd"]):
                 fxm = f["brl"] / f["usd"] if f["usd"] else 0
-                print(f"    {p[:40]:40s} {f['qtd']:10.4f} {f['usd']:12,.2f} {f['brl']:12,.2f} {fxm:9.3f}")
+                linha = f"    {p[:40]:40s} {f['qtd']:10.4f} {f['usd']:12,.2f} {f['brl']:12,.2f} {fxm:9.3f}"
+                if com_preco:
+                    pr = precos.get(_ticker(p))
+                    sal = saldos.get(p)
+                    if pr and sal:
+                        ret_usd = f["qtd"] * pr["preco"] / f["usd"] - 1
+                        ret_brl = sal / f["brl"] - 1
+                        linha += (f" {ret_usd*100:8.1f}% {ret_brl*100:8.1f}% "
+                                  f"{(ret_brl-ret_usd)*100:+7.1f}pp")
+                    elif pr and not sal:
+                        linha += "  (sem saldo na posição: indisponível)"
+                    else:
+                        linha += "  (sem preço em precos.csv: indisponível)"
+                print(linha)
+            if com_preco:
+                faltam = [_ticker(p) for p, _ in cur if _ticker(p) not in precos]
+                if faltam:
+                    print(f"    >>> sem preço em precos.csv: {', '.join(sorted(set(faltam)))}")
 
 
 def modo_descoberta(rows, label):
@@ -421,15 +531,213 @@ def modo_descoberta(rows, label):
     print("      Se este layout for recorrente, adicione uma assinatura em detectar_tipo().")
 
 
+# --------------------------------------------------------- precos.csv --------
+
+def ler_precos(folder):
+    """precos.csv (ticker,preco,moeda,data,fonte). Retorna {TICKER: {...}} ou {} se ausente."""
+    rows = _ler_csv_simples(os.path.join(folder, "precos.csv"))
+    if not rows:
+        return {}
+    out = {}
+    for r in rows:
+        if len(r) < 2 or r[0].strip().lower() == "ticker":
+            continue
+        tk = r[0].strip().upper()
+        out[tk] = {"preco": num(r[1]),
+                   "moeda": (r[2].strip() if len(r) > 2 else ""),
+                   "data": (r[3].strip() if len(r) > 3 else "?"),
+                   "fonte": (r[4].strip() if len(r) > 4 else "sem fonte")}
+    sem_fonte = [t for t, v in out.items() if v["fonte"] in ("", "sem fonte")]
+    if sem_fonte:
+        print(f"\nAVISO precos.csv: sem fonte para {', '.join(sem_fonte)} — regra anti-invenção: "
+              "todo preço com fonte+data.")
+    if "USDBRL" not in out:
+        print("\nAVISO precos.csv: falta a linha USDBRL (câmbio) — retornos em 2 moedas não calculados.")
+    return out
+
+
+# ------------------------------------------------------- checagens de processo
+
+def checar_consistencia_datas(pos_path, extrato_max, hoje):
+    """Posição (mtime) vs. data final do extrato vs. hoje. Avisa em destaque se a posição é velha."""
+    if not pos_path:
+        return
+    dpos = datetime.date.fromtimestamp(os.path.getmtime(pos_path))
+    avisos = []
+    if extrato_max and (extrato_max - dpos).days > DIAS_POSICAO_VS_EXTRATO:
+        avisos.append(f"o extrato vai até {fmt_data(extrato_max)}, mas o arquivo de posição é de "
+                      f"{fmt_data(dpos)} ({(extrato_max - dpos).days} dias mais antigo)")
+    if (hoje - dpos).days > DIAS_POSICAO_VELHA:
+        avisos.append(f"o arquivo de posição tem {(hoje - dpos).days} dias (de {fmt_data(dpos)})")
+    if avisos:
+        print("\n" + "!" * 70)
+        print("!!! POSIÇÃO DESATUALIZADA — os números de posição acima NÃO refletem a carteira atual:")
+        for a in avisos:
+            print(f"!!!   - {a}")
+        print("!!! Peça/exporte a POSIÇÃO atual no Kinvo: Carteira -> Resumo de produtos -> Exportar Excel")
+        print("!!! (o extrato e o PDF-imagem NÃO substituem a posição em Excel).")
+        print("!" * 70)
+    return dpos
+
+
+def _data_de_nome(nome):
+    m = re.search(r"(\d{4}-\d{2}-\d{2})", nome)
+    return data_br(m.group(1)) if m else None
+
+
+def checar_mandato_e_decisoes(folder):
+    print("\n" + "=" * 70)
+    print("CHECAGENS DE PROCESSO (mandato / decisões)")
+    print("=" * 70)
+    rels = sorted(d for d in (_data_de_nome(os.path.basename(f))
+                              for f in glob.glob(os.path.join(folder, "relatorio-*.md"))) if d)
+    ult_rel = rels[-1] if rels else None
+    mands = glob.glob(os.path.join(folder, "mandato-*.md"))
+    if not mands:
+        print("  >>> SEM MANDATO (mandato-<cliente>.md): crie a partir de templates/mandato-template.md "
+              "e confirme as regras com o gestor antes de recomendar.")
+    else:
+        m = mands[0]
+        drev = None
+        try:
+            with open(m, encoding="utf-8") as f:
+                txt = f.read()
+            mm = re.search(r"ltima revis[aã]o:\s*(\d{4}-\d{2}-\d{2})", txt)
+            drev = data_br(mm.group(1)) if mm else None
+        except OSError:
+            pass
+        if drev is None:
+            drev = datetime.date.fromtimestamp(os.path.getmtime(m))
+        msg = f"  Mandato: {os.path.basename(m)} (última revisão {fmt_data(drev)})"
+        if ult_rel:
+            msg += f" | último relatório {fmt_data(ult_rel)}"
+        print(msg)
+        if ult_rel and drev < ult_rel:
+            print("  >>> MANDATO DESATUALIZADO: é anterior ao último relatório. Registre as pendências que "
+                  "os relatórios pediram (novos ativos/classes, teses, limites) e atualize 'Última revisão'.")
+    dec = os.path.join(folder, "decisoes.md")
+    if os.path.exists(dec):
+        print(f"  Decisões: decisoes.md presente — ao gerar o relatório, atualize o status das "
+              f"recomendações anteriores (seguida / ignorada / pendente) e abra as novas.")
+    else:
+        print("  >>> SEM decisoes.md: crie a partir de templates/decisoes-template.md para registrar "
+              "recomendação vs. execução (é o que permite ao histórico 'aprender').")
+
+
+# ------------------------------------------------------------- snapshot ------
+
+def _snapshot_csv_anterior(folder, data_pos):
+    cands = []
+    for f in glob.glob(os.path.join(folder, "carteira-snapshot-*.csv")):
+        d = _data_de_nome(os.path.basename(f))
+        if d and d < data_pos:
+            cands.append((d, f))
+    return max(cands)[1] if cands else None
+
+
+def gravar_snapshot(folder, pos, data_pos, pos_label):
+    import csv as _csv
+    base = os.path.join(folder, f"carteira-snapshot-{data_pos:%Y-%m-%d}")
+    md_path, csv_path = base + ".md", base + ".csv"
+    if os.path.exists(md_path) or os.path.exists(csv_path):
+        print(f"\nSnapshot {os.path.basename(base)}.md/.csv já existe — não sobrescrevo "
+              "(apague-o se quiser regenerar).")
+        return
+    holds = pos["holds"]
+    total = pos["total"]
+    apl_total = sum(a for _, _, a, _ in holds)
+
+    anterior = {}
+    ant_path = _snapshot_csv_anterior(folder, data_pos)
+    if ant_path:
+        with open(ant_path, encoding="utf-8-sig", newline="") as f:
+            for r in _csv.DictReader(f):
+                anterior[_ticker(r["produto"])] = (r["produto"], num(r["saldo"]))
+    ant_total = sum(v for _, v in anterior.values()) if anterior else None
+
+    with open(csv_path, "w", encoding="utf-8", newline="") as f:
+        w = _csv.writer(f)
+        w.writerow(["produto", "classe", "aplicado", "saldo"])
+        for p, c, a, s in sorted(holds, key=lambda x: -x[3]):
+            w.writerow([p, c, f"{a:.2f}", f"{s:.2f}"])
+
+    linhas = []
+    linhas.append(f"# Carteira — snapshot {data_pos:%Y-%m-%d} (gerado pelo parser)")
+    linhas.append("")
+    linhas.append(f"**Fonte:** {pos_label} (arquivo de posição datado de {fmt_data(data_pos)}).")
+    linhas.append(f"**Saldo bruto:** R$ {total:,.2f} | **Aplicado:** R$ {apl_total:,.2f} | "
+                  f"**Resultado:** R$ {total - apl_total:,.2f} "
+                  f"({(total / apl_total - 1) * 100 if apl_total else 0:+.2f}%)")
+    if ant_path:
+        linhas.append(f"**vs snapshot anterior** ({os.path.basename(ant_path)}): patrimônio "
+                      f"R$ {ant_total:,.2f} → R$ {total:,.2f} ({total - ant_total:+,.2f}; "
+                      f"{(total / ant_total - 1) * 100 if ant_total else 0:+.2f}%).")
+    else:
+        linhas.append("**vs snapshot anterior:** nenhum `.csv` anterior na pasta — este é o primeiro "
+                      "snapshot comparável; o delta aparece a partir do próximo.")
+    linhas.append("")
+    linhas.append("> Gerado automaticamente a partir da posição. Números com formato PT-BR nos arquivos "
+                  "de origem; aqui em formato numérico. Conferir o total com o topo do relatório da fonte.")
+    linhas.append("")
+    linhas.append("## Alocação por classe")
+    linhas.append("")
+    linhas.append("| Classe | Valor | % |")
+    linhas.append("|---|---|---|")
+    cl = collections.defaultdict(float)
+    for _, c, _, s in holds:
+        cl[c] += s
+    for c, v in sorted(cl.items(), key=lambda x: -x[1]):
+        linhas.append(f"| {c} | {v:,.2f} | {v / total * 100:.2f}% |")
+    linhas.append("")
+    linhas.append("## Posições (ordenadas por saldo)")
+    linhas.append("")
+    cab = "| Ativo | Classe | Aplicado | Saldo | Valoriz. | Peso |"
+    sep = "|---|---|---|---|---|---|"
+    if ant_path:
+        cab += " Δ vs anterior |"
+        sep += "---|"
+    linhas += [cab, sep]
+    vistos = set()
+    for p, c, a, s in sorted(holds, key=lambda x: -x[3]):
+        val = (s / a - 1) * 100 if a else 0.0
+        row = f"| {p} | {c} | {a:,.2f} | {s:,.2f} | {val:+.1f}% | {s / total * 100:.2f}% |"
+        if ant_path:
+            tk = _ticker(p)
+            vistos.add(tk)
+            if tk in anterior:
+                d = s - anterior[tk][1]
+                row += f" {d:+,.2f} |"
+            else:
+                row += " **NOVA** |"
+        linhas.append(row)
+    if ant_path:
+        saidas = [anterior[tk][0] for tk in anterior if tk not in vistos]
+        if saidas:
+            linhas.append("")
+            linhas.append("**Saíram desde o snapshot anterior:** " + "; ".join(saidas))
+    linhas.append("")
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(linhas))
+    print(f"\nSnapshot gravado: {os.path.basename(md_path)} (+ .csv para o próximo delta)"
+          + (f"; delta calculado vs {os.path.basename(ant_path)}" if ant_path else ""))
+
+
+# ------------------------------------------------------------------ main ------
+
 def main():
-    if len(sys.argv) < 2:
-        print("Uso: python parse_carteira.py \"<pasta-do-cliente>\"")
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    flags = set(a for a in sys.argv[1:] if a.startswith("--"))
+    if not args:
+        print("Uso: python parse_carteira.py \"<pasta-do-cliente>\" [--no-snapshot]")
         sys.exit(1)
-    folder = sys.argv[1]
+    folder = args[0]
+    hoje = datetime.date.today()
 
     arquivos = sorted(
         f for f in glob.glob(os.path.join(folder, "*"))
         if os.path.splitext(f)[1].lower() in (".xlsx", ".xls", ".csv", ".pdf")
+        and os.path.basename(f).lower() not in ("precos.csv",)
+        and not os.path.basename(f).lower().startswith("carteira-snapshot-")
     )
     print("=" * 70)
     print("INVENTÁRIO DE ARQUIVOS DE DADOS:", folder)
@@ -463,21 +771,48 @@ def main():
             label = f"{base}" + (f" [aba: {nome}]" if multi else "")
             tipo = detectar_tipo(rows)
             if tipo == "posicao-kinvo":
-                posicoes.append((rows, label))
+                posicoes.append((rows, label, f))
             elif tipo == "extrato-kinvo":
-                extratos.append((rows, label))
+                extratos.append((rows, label, f))
             else:
                 desconhecidos.append((rows, label))
 
-    current = set()
-    for rows, label in posicoes:
-        _total, cur = analisar_posicao(rows, label)
-        current |= cur
+    # --- posições (mais de uma = dupla contagem; a mais recente manda no snapshot) ---
+    posicoes.sort(key=lambda x: -os.path.getmtime(x[2]))
+    current, saldos, pos_info, pos_path, pos_label = set(), {}, None, None, None
+    for rows, label, path in posicoes:
+        info = analisar_posicao(rows, label)
+        current |= info["current"]
+        for p, _, _, s in info["holds"]:
+            saldos.setdefault(p, s)
+        if pos_info is None:
+            pos_info, pos_path, pos_label = info, path, label
     if len(posicoes) > 1:
         print("\n>>> ATENÇÃO: MAIS DE UMA POSIÇÃO na pasta — risco de DUPLA CONTAGEM se as fontes "
-              "se sobrepõem (mesmo ativo em dois relatórios). Reconciliar antes de somar totais.")
-    for rows, label in extratos:
-        analisar_extrato(rows, label, current)
+              "se sobrepõem (mesmo ativo em dois relatórios). Reconciliar antes de somar totais. "
+              f"O snapshot usa a mais recente: {pos_label}.")
+
+    # --- extratos: usar o mais recente; listar os ignorados ---
+    extrato_max = None
+    if extratos:
+        com_data = [(extrato_periodo(rows)[1] or datetime.date.min, rows, label, path)
+                    for rows, label, path in extratos]
+        com_data.sort(key=lambda x: x[0], reverse=True)
+        dmax, rows, label, path = com_data[0]
+        extrato_max = dmax if dmax != datetime.date.min else None
+        if len(com_data) > 1:
+            print(f"\n>>> {len(com_data)} EXTRATOS na pasta — usando o MAIS RECENTE "
+                  f"({label}, até {fmt_data(extrato_max)}). Ignorados (mais antigos/cumulativos): "
+                  + "; ".join(f"{l} (até {fmt_data(d if d != datetime.date.min else None)})"
+                              for d, _, l, _ in com_data[1:]))
+        precos = ler_precos(folder)
+        analisar_extrato(rows, label, current, saldos, precos)
+
+    # --- consistência de datas (posição vs extrato vs hoje) ---
+    data_pos = None
+    if pos_path:
+        data_pos = checar_consistencia_datas(pos_path, extrato_max, hoje)
+
     for rows, label in desconhecidos:
         if rows is None:
             print(f"\nAVISO: {label}")
@@ -492,6 +827,11 @@ def main():
         print("  >>> 1º tente texto:  pdftotext -layout \"<arquivo>\" saida.txt")
         print("  >>> se vier vazio (PDF-imagem, ex.: Kinvo): renderizar com Poppler "
               "(pdftoppm -png -r 200) e ler as imagens.")
+
+    checar_mandato_e_decisoes(folder)
+
+    if pos_info and "--no-snapshot" not in flags:
+        gravar_snapshot(folder, pos_info, data_pos or hoje, pos_label)
 
     if not posicoes:
         print("\nAVISO: nenhuma POSIÇÃO reconhecida automaticamente. Se houver planilha em modo "
