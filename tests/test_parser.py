@@ -188,6 +188,7 @@ def main():
         linha_tes = next((l for l in out.splitlines() if l.strip().startswith("Tesouro Selic 2029")), "")
         check("CONCENTRACAO" not in linha_tes, "Tesouro a 60% NÃO recebe flag CONCENTRACAO (RF sem teto por papel)")
         check("NÃO LISTADAS NA POSIÇÃO" in out and "NEWX" in out, "NEWX (aberta, fora da posição) sai como NÃO LISTADA")
+        check("QUANTIDADE INCONSISTENTE" in out, "posição fresca + produto ausente → 'quantidade inconsistente', não 'posição velha'")
         check(not any("| NEWX" in l for l in out.splitlines()), "NEWX NÃO aparece como prejuízo em ENCERRADOS")
         sec_usd = out.split("custo em USD vs BRL")[1] if "custo em USD vs BRL" in out else ""
         check("ACME" in sec_usd, "ACME (Avenue, aberta) aparece na tabela de custo USD")
@@ -241,6 +242,7 @@ def main():
         check(r4.returncode == 0, f"parser (rodada 4) saiu com código 0 (código={r4.returncode}) {r4.stderr[-300:]}")
         check("!!! POSIÇÃO DESATUALIZADA" in o4, "posição 120 dias mais velha que o extrato gera banner em destaque")
         check("Resumo de produtos" in o4, "aviso traz a instrução de exportação da posição no Kinvo")
+        check("Provável POSIÇÃO DESATUALIZADA" in o4, "posição velha + produto ausente → 'provável posição desatualizada'")
         check("EXTRATOS na pasta" in o4 and "MAIS RECENTE" in o4, "2 extratos: usa o mais recente")
         check("extrato-antigo" in o4.split("Ignorados")[1][:200] if "Ignorados" in o4 else False,
               "extrato antigo listado como ignorado")

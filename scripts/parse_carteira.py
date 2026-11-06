@@ -378,7 +378,7 @@ def extrato_periodo(rows):
     return (min(ds), max(ds)) if ds else (None, None)
 
 
-def analisar_extrato(rows, label, current=None, saldos=None, precos=None):
+def analisar_extrato(rows, label, current=None, saldos=None, precos=None, posicao_fresca=False):
     current = current or set()
     saldos = saldos or {}
     precos = precos or {}
@@ -451,8 +451,13 @@ def analisar_extrato(rows, label, current=None, saldos=None, precos=None):
         print(f"  {res:>11,.0f} | apl {a['apl']:>10,.0f} res {a['res']:>10,.0f} prov {a['prov']:>7,.0f} | {p[:40]}")
     if nao_listadas:
         print("\n  >>> NÃO LISTADAS NA POSIÇÃO (quantidade líquida > 0 no extrato, mas ausentes da posição):")
-        print("      Provável POSIÇÃO DESATUALIZADA — exporte a posição atual antes de concluir. "
-              "NÃO são prejuízo realizado.")
+        if posicao_fresca:
+            print("      A posição é recente → provável QUANTIDADE INCONSISTENTE no extrato (venda/transferência "
+                  "sem quantidade registrada; caso real: MGLU3). Confirme na corretora; NÃO são prejuízo "
+                  "realizado nem posição faltante.")
+        else:
+            print("      Provável POSIÇÃO DESATUALIZADA — exporte a posição atual antes de concluir. "
+                  "NÃO são prejuízo realizado.")
         for _res, p, a in sorted(nao_listadas, key=lambda x: -x[2]["apl"]):
             q = f"qtd {a['qtd']:,.4f}" if a["tem_qtd"] else "qtd indisponível"
             print(f"      {p[:44]:44s} apl {a['apl']:>10,.0f} res {a['res']:>8,.0f}  {q}")
@@ -558,10 +563,10 @@ def ler_precos(folder):
 
 # ------------------------------------------------------- checagens de processo
 
-def checar_consistencia_datas(pos_path, extrato_max, hoje):
-    """Posição (mtime) vs. data final do extrato vs. hoje. Avisa em destaque se a posição é velha."""
+def avisos_posicao(pos_path, extrato_max, hoje):
+    """(data_da_posicao, [avisos]) — posição (mtime) vs. data final do extrato vs. hoje."""
     if not pos_path:
-        return
+        return None, []
     dpos = datetime.date.fromtimestamp(os.path.getmtime(pos_path))
     avisos = []
     if extrato_max and (extrato_max - dpos).days > DIAS_POSICAO_VS_EXTRATO:
@@ -569,6 +574,12 @@ def checar_consistencia_datas(pos_path, extrato_max, hoje):
                       f"{fmt_data(dpos)} ({(extrato_max - dpos).days} dias mais antigo)")
     if (hoje - dpos).days > DIAS_POSICAO_VELHA:
         avisos.append(f"o arquivo de posição tem {(hoje - dpos).days} dias (de {fmt_data(dpos)})")
+    return dpos, avisos
+
+
+def checar_consistencia_datas(pos_path, extrato_max, hoje):
+    """Imprime o banner POSIÇÃO DESATUALIZADA quando houver avisos. Retorna a data da posição."""
+    dpos, avisos = avisos_posicao(pos_path, extrato_max, hoje)
     if avisos:
         print("\n" + "!" * 70)
         print("!!! POSIÇÃO DESATUALIZADA — os números de posição acima NÃO refletem a carteira atual:")
@@ -806,7 +817,9 @@ def main():
                   + "; ".join(f"{l} (até {fmt_data(d if d != datetime.date.min else None)})"
                               for d, _, l, _ in com_data[1:]))
         precos = ler_precos(folder)
-        analisar_extrato(rows, label, current, saldos, precos)
+        _dpos, _avisos = avisos_posicao(pos_path, extrato_max, hoje)
+        analisar_extrato(rows, label, current, saldos, precos,
+                         posicao_fresca=bool(pos_path) and not _avisos)
 
     # --- consistência de datas (posição vs extrato vs hoje) ---
     data_pos = None
